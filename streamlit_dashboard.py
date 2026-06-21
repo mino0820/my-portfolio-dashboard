@@ -236,8 +236,8 @@ if df_raw is not None:
     portfolio['currently_price'] = portfolio['종목명'].map(latest_prices)
 
     portfolio['평가금액'] = np.where(
-        (portfolio['currently_price'] == 0) & (portfolio['종류'] == 'ELS'),
-        portfolio['총매입가'],
+        (portfolio['currently_price'] == 0),
+        portfolio['총매입가'],  # 종가를 못 가져오면(0이면) 일단 원금을 평가금액으로 잡아서 0원 방지
         portfolio['보유수량'] * portfolio['currently_price']
     )
     portfolio['총수익'] = portfolio['평가금액'] - portfolio['총매입가']
