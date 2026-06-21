@@ -4,6 +4,8 @@ import numpy as np
 import re
 import plotly.express as px
 import plotly.graph_objects as go
+import urllib.request
+import json
 
 # Page configuration
 st.set_page_config(
@@ -22,7 +24,8 @@ try:
     GID_입금액 = st.secrets["google_sheet"]["gid_deposit"]
     GID_원금대비수익률 = st.secrets["google_sheet"]["gid_profit_rate"]
 except Exception as e:
-    st.error("🔒 Streamlit Cloud의 Settings -> Secrets 설정에 필요한 구글 시트 정보(url, gid_buy_log, gid_yearly_profit, gid_deposit, gid_profit_rate)가 누락되었거나 올바르지 않습니다. 설정을 확인해주세요.")
+    st.error(
+        "🔒 Streamlit Cloud의 Settings -> Secrets 설정에 필요한 구글 시트 정보(url, gid_buy_log, gid_yearly_profit, gid_deposit, gid_profit_rate)가 누락되었거나 올바르지 않습니다. 설정을 확인해주세요.")
     st.stop()
 
 
@@ -43,6 +46,19 @@ def load_sheet_by_gid(base_url, gid):
     except Exception as e:
         st.sidebar.warning(f"💡 GID {gid} 로드 중 참고: {e}")
         return None
+
+
+# 💡 실시간 국내 주가 조회를 위한 경량 함수 추가 (네이버 금융 API 활용)
+def get_current_kr_price(ticker):
+    try:
+        url = f"https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            price_str = data['result']['areas'][0]['datas'][0]['nv']
+            return float(price_str)
+    except:
+        return 0
 
 
 st.sidebar.header("🔄 데이터 설정")
@@ -206,10 +222,16 @@ def get_dividend_profit(tab_name, full_df):
 
 
 # -----------------------------------------------------------------------------
-# 2. 메수일지(df_raw) 데이터 정밀 전처리 및 portfolio 생성 (정상 들여쓰기 교정 완료)
+# 2. 매수일지(df_raw) 데이터 정밀 전처리 및 portfolio 생성
 # -----------------------------------------------------------------------------
 df = None
 portfolio = pd.DataFrame()
+
+# 💡 보유 종목 종가 에러 방지를 위한 주식 단축코드 매핑 사전 생성
+TICKER_MAP = {
+    'HD현대일렉트릭': '267260',
+    '삼성전자': '005930'
+}
 
 if df_raw is not None:
     df = df_raw.copy()
@@ -217,7 +239,7 @@ if df_raw is not None:
         if df[col].dtype == 'object':
             df[col] = df[col].astype(str).str.strip()
 
-    # 숫자형 데이터 정밀 전처리 (공백 및 쉼표 완전 제거 후 숫자로 강제 변환)
+    # 숫자형 데이터 정밀 전처리
     numeric_cols = ['거래금액', '수량', '투자금', '수수료', '총액', '종가']
     for col in numeric_cols:
         if col in df.columns:
@@ -228,13 +250,6 @@ if df_raw is not None:
     # 자산 현황용 데이터 가공 (매수 기준)
     df_buy = df[df['구분'] == '매수'].copy()
 
-    # [보완] 종가 데이터가 0인 경우를 방지하기 위해 정상적인 종가를 매핑
-    df_valid_price = df[df['종가'] > 0].sort_values(by='일자' if '일자' in df.columns else df.index)
-    if not df_valid_price.empty:
-        latest_prices = df_valid_price.groupby('종목명')['종가'].last().to_dict()
-    else:
-        latest_prices = df.sort_values(by='일자' if '일자' in df.columns else df.index).groupby('종목명')['종가'].last().to_dict()
-
     type_mapping = df.groupby('종목명')['종류'].last().to_dict()
 
     portfolio = df_buy.groupby(['계좌', '종목명']).agg(
@@ -244,8 +259,22 @@ if df_raw is not None:
 
     portfolio['종류'] = portfolio['종목명'].map(type_mapping)
 
-    # 기본값 매핑 후 여전히 0이거나 없는 항목 처리
-    portfolio['currently_price'] = portfolio['종목명'].map(latest_prices).fillna(0)
+    # 💡 [핵심 해결 로직] 구글시트 종가 대신, 파이썬이 실시간 API 주가를 가져와 매핑하도록 변경
+    # 시트 내 백업 종가 먼저 매핑
+    df_valid_price = df[df['종가'] > 0].sort_values(by='일자' if '일자' in df.columns else df.index)
+    backup_prices = df_valid_price.groupby('종목명')['종가'].last().to_dict() if not df_valid_price.empty else {}
+
+    current_prices = {}
+    for name in portfolio['종목명'].unique():
+        if name in TICKER_MAP:
+            api_price = get_current_kr_price(TICKER_MAP[name])
+            if api_price > 0:
+                current_prices[name] = api_price
+                continue
+        # 매핑 사전에 없거나 API 실패 시 구글 시트 백업 값 사용
+        current_prices[name] = backup_prices.get(name, 0)
+
+    portfolio['currently_price'] = portfolio['종목명'].map(current_prices).fillna(0)
 
     portfolio['평가금액'] = np.where(
         (portfolio['currently_price'] == 0) & (portfolio['종류'] == 'ELS'),
@@ -466,8 +495,9 @@ if not portfolio.empty:
             if df_profit_rate_raw is not None and not df_profit_rate_raw.empty:
                 st.markdown("<hr style='border:1px solid #161B24; margin-top:20px; margin-bottom:25px;'>",
                             unsafe_allow_html=True)
-                st.markdown("<h3 style='font-size: 18px; color:#FFFFFF; margin-bottom:15px;'>📈 원금 대비 수익률 및 자산 성장 추이</h3>",
-                            unsafe_allow_html=True)
+                st.markdown(
+                    "<h3 style='font-size: 18px; color:#FFFFFF; margin-bottom:15px;'>📈 원금 대비 수익률 및 자산 성장 추이</h3>",
+                    unsafe_allow_html=True)
 
                 df_pr = df_profit_rate_raw.copy()
 
@@ -523,7 +553,8 @@ if not portfolio.empty:
                 )
                 st.plotly_chart(fig_growth, use_container_width=True)
             else:
-                st.info("📊 '원금대비수익률' 시트 데이터를 불러오지 못했거나 테이블이 비어있습니다. Streamlit Cloud의 Secrets에 기입된 GID 정보를 다시 한 번 확인해 주세요.")
+                st.info(
+                    "📊 '원금대비수익률' 시트 데이터를 불러오지 못했거나 테이블이 비어있습니다. Streamlit Cloud의 Secrets에 기입된 GID 정보를 다시 한 번 확인해 주세요.")
 
     # -------------------------------------------------------------------------
     # 5. 개별 계좌별 상세 내역 탭 리스트업 루프
