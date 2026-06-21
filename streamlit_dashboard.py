@@ -13,17 +13,16 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
-# 구글 시트 ID 및 GID 설정 (secrets 미설정 시 폴백 주소 사용)
+# 🔒 구글 시트 및 GID 설정 (Secrets에서 안전하게 로드)
 # -----------------------------------------------------------------------------
 try:
-    # secrets.toml 또는 Streamlit Cloud Secrets 설정에서 값을 읽어옵니다.
     GOOGLE_SHEET_URL = st.secrets["google_sheet"]["url"]
     GID_매수일지 = st.secrets["google_sheet"]["gid_buy_log"]
     GID_연도별수익 = st.secrets["google_sheet"]["gid_yearly_profit"]
     GID_입금액 = st.secrets["google_sheet"]["gid_deposit"]
     GID_원금대비수익률 = st.secrets["google_sheet"]["gid_profit_rate"]
 except Exception as e:
-    st.error("🔒 시크릿 설정을 확인해주세요. 필수 데이터 주소를 불러올 수 없습니다.")
+    st.error("🔒 Streamlit Cloud의 Settings -> Secrets 설정에 필요한 구글 시트 정보(url, gid_buy_log, gid_yearly_profit, gid_deposit, gid_profit_rate)가 누락되었거나 올바르지 않습니다. 설정을 확인해주세요.")
     st.stop()
 
 
@@ -52,7 +51,7 @@ if st.sidebar.button("🔄 구글 시트 새로고침"):
     st.rerun()
 
 # -----------------------------------------------------------------------------
-# ✨ [레이아웃 깨짐 교정] 토스 대시보드 전용 정밀 CSS 디자인 시트 (디자인 통일 완료)
+# ✨ [레이아웃 깨짐 교정] 토스 대시보드 전용 정밀 CSS 디자인 시트
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -114,7 +113,6 @@ st.markdown("""
     .toss-summary-val { font-size: 24px; font-weight: 700; color: #FFFFFF; }
     .toss-summary-subval { font-size: 13px; margin-top: 4px; font-weight: 500; }
 
-    /* 배당수익 전용 하이라이트 민트 컬러 스펙 정의 */
     .dividend-highlight { color: #00D4B2 !important; }
 
     .weight-container-box { padding: 12px 20px; margin-top: 12px; }
@@ -140,7 +138,6 @@ df_yearly_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_연도별수익)
 df_deposit_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_입금액)
 
 
-# 자산구분 정밀 분류 함수
 def categorize_kind(k):
     k_str = str(k).upper()
     if 'ETF' in k_str:
@@ -440,10 +437,11 @@ if df_raw is not None:
                 legend=dict(title=dict(text='자산 구분', font=dict(color='#FFFFFF')), font=dict(color='#FFFFFF')),
                 margin=dict(t=50, b=20, l=10, r=10)
             )
-            st.plotly_chart(fig, use_container_width=True)
+            # 💡 [문법 변경 반영] use_container_width=True 대신 width='stretch' 사용
+            st.plotly_chart(fig, width='stretch')
 
             # -----------------------------------------------------------------
-            # ✨ [교정 완료] 원금대비수익률 추이 시각화 그래프 (SUMMARY 내부 안착)
+            # 원금대비수익률 추이 시각화 그래프
             # -----------------------------------------------------------------
             df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_원금대비수익률)
 
@@ -455,7 +453,6 @@ if df_raw is not None:
 
                 df_pr = df_profit_rate_raw.copy()
 
-                # 일자 데이터 전처리 및 정렬
                 if '일자' in df_pr.columns:
                     df_pr['일자_정제'] = df_pr['일자'].astype(str).str.replace('.', '-', regex=False)
                     df_pr['일자_정제'] = df_pr['일자_정제'].apply(lambda x: x + '-01' if len(x) == 7 else x)
@@ -465,7 +462,6 @@ if df_raw is not None:
                 else:
                     df_pr['x_axis'] = df_pr.index.astype(str)
 
-                # 필요 컬럼 숫자형 정밀 변환
                 target_numeric_cols = ['누적입금액', '수익금', '입금액 대비 수익률']
                 for col in target_numeric_cols:
                     if col in df_pr.columns:
@@ -473,92 +469,44 @@ if df_raw is not None:
                             df_pr[col] = df_pr[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
                         df_pr[col] = pd.to_numeric(df_pr[col], errors='coerce').fillna(0)
 
-                # 금액 단위를 100만 원으로 축소
                 df_pr['누적입금액_백만'] = df_pr['누적입금액'] / 1000000
                 df_pr['수익금_백만'] = df_pr['수익금'] / 1000000
 
                 fig_growth = go.Figure()
 
-                # 1. 누적입금액 바 차트 (연한 파랑)
                 fig_growth.add_trace(go.Bar(
-                    x=df_pr['x_axis'],
-                    y=df_pr['누적입금액_백만'],
-                    name='누적입금액',
-                    marker_color='#5AC8FA',
-                    opacity=0.8,
-                    yaxis='y1',
-                    hovertemplate='%{y:,.1f}백만 원'
+                    x=df_pr['x_axis'], y=df_pr['누적입금액_백만'], name='누적입금액',
+                    marker_color='#5AC8FA', opacity=0.8, yaxis='y1', hovertemplate='%{y:,.1f}백만 원'
                 ))
 
-                # 2. 수익금 바 차트 (진한 파랑)
                 fig_growth.add_trace(go.Bar(
-                    x=df_pr['x_axis'],
-                    y=df_pr['수익금_백만'],
-                    name='수익금',
-                    marker_color='#3182F6',
-                    opacity=0.9,
-                    yaxis='y1',
-                    hovertemplate='%{y:,.1f}백만 원'
+                    x=df_pr['x_axis'], y=df_pr['수익금_백만'], name='수익금',
+                    marker_color='#3182F6', opacity=0.9, yaxis='y1', hovertemplate='%{y:,.1f}백만 원'
                 ))
 
-                # 3. 입금액 대비 수익률 선 차트 (주황색)
                 fig_growth.add_trace(go.Scatter(
-                    x=df_pr['x_axis'],
-                    y=df_pr['입금액 대비 수익률'],
-                    name='입금액 대비 수익률',
-                    mode='lines+markers+text',
-                    line=dict(color='#F04452', width=3),
+                    x=df_pr['x_axis'], y=df_pr['입금액 대비 수익률'], name='입금액 대비 수익률',
+                    mode='lines+markers+text', line=dict(color='#F04452', width=3),
                     marker=dict(size=6, color='#F04452'),
                     text=df_pr['입금액 대비 수익률'].apply(lambda x: f"{x:.1f}%" if x != 0 else ""),
-                    textposition='top center',
-                    textfont=dict(color='#FFFFFF', size=10, family='Pretendard'),
-                    yaxis='y2',
-                    hovertemplate='%{y:.2f}%'
+                    textposition='top center', textfont=dict(color='#FFFFFF', size=10, family='Pretendard'),
+                    yaxis='y2', hovertemplate='%{y:.2f}%'
                 ))
 
-                # 레이아웃 설정
                 fig_growth.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color='#FFFFFF', family='Pretendard'),
-                    barmode='stack',
-                    hovermode='x unified',
-                    showlegend=True,
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1,
-                        font=dict(size=11)
-                    ),
-                    xaxis=dict(
-                        title='',
-                        gridcolor='#161B24',
-                        showgrid=False,
-                        tickangle=-45,
-                        type='category'
-                    ),
-                    yaxis=dict(
-                        title='금액 (백만 원)',
-                        gridcolor='#161B24',
-                        showgrid=True,
-                        side='left',
-                        tickformat=',.0f'
-                    ),
-                    yaxis2=dict(
-                        title='수익률 (%)',
-                        side='right',
-                        overlaying='y',
-                        showgrid=False,
-                        ticksuffix='%'
-                    ),
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#FFFFFF', family='Pretendard'), barmode='stack',
+                    hovermode='x unified', showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=11)),
+                    xaxis=dict(title='', gridcolor='#161B24', showgrid=False, tickangle=-45, type='category'),
+                    yaxis=dict(title='금액 (백만 원)', gridcolor='#161B24', showgrid=True, side='left', tickformat=',.0f'),
+                    yaxis2=dict(title='수익률 (%)', side='right', overlaying='y', showgrid=False, ticksuffix='%'),
                     margin=dict(t=40, b=60, l=10, r=10)
                 )
-
-                st.plotly_chart(fig_growth, use_container_width=True)
+                # 💡 [문법 변경 반영] use_container_width=True 대신 width='stretch' 사용
+                st.plotly_chart(fig_growth, width='stretch')
             else:
-                st.info("원금대비수익률 시트 데이터를 불러오지 못했거나 데이터가 비어있습니다.")
+                st.info("📊 '원금대비수익률' 시트 데이터를 불러오지 못했거나 테이블이 비어있습니다. Streamlit Cloud의 Secrets에 기입된 GID 정보를 다시 한 번 확인해 주세요.")
 
 
     # -------------------------------------------------------------------------
