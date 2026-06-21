@@ -204,54 +204,61 @@ def get_dividend_profit(tab_name, full_df):
 
     return filtered_df['총액'].abs().sum()
 
-    # 기존 코드의 데이터 전처리 부분(if df_raw is not None:)을 아래 코드로 대체하거나 전체 반영해 보세요.
 
-    if df_raw is not None:
-        df = df_raw.copy()
-        for col in df.columns:
+# -----------------------------------------------------------------------------
+# 2. 메수일지(df_raw) 데이터 정밀 전처리 및 portfolio 생성 (정상 들여쓰기 교정 완료)
+# -----------------------------------------------------------------------------
+df = None
+portfolio = pd.DataFrame()
+
+if df_raw is not None:
+    df = df_raw.copy()
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df[col] = df[col].astype(str).str.strip()
+
+    # 숫자형 데이터 정밀 전처리 (공백 및 쉼표 완전 제거 후 숫자로 강제 변환)
+    numeric_cols = ['거래금액', '수량', '투자금', '수수료', '총액', '종가']
+    for col in numeric_cols:
+        if col in df.columns:
             if df[col].dtype == 'object':
-                df[col] = df[col].astype(str).str.strip()
+                df[col] = df[col].str.replace(',', '').str.replace('₩', '').str.strip()
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-        # 숫자형 데이터 정밀 전처리 (공백 및 쉼표 완전 제거 후 숫자로 강제 변환)
-        numeric_cols = ['거래금액', '수량', '투자금', '수수료', '총액', '종가']
-        for col in numeric_cols:
-            if col in df.columns:
-                if df[col].dtype == 'object':
-                    # 만약 GOOGLEFINANCE 결과에 원화 기호(₩)나 특수문자가 섞여 들어올 경우를 대비해 정제
-                    df[col] = df[col].str.replace(',', '').str.replace('₩', '').str.strip()
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    # 자산 현황용 데이터 가공 (매수 기준)
+    df_buy = df[df['구분'] == '매수'].copy()
 
-        # 자산 현황용 데이터 가공 (매수 기준)
-        df_buy = df[df['구분'] == '매수'].copy()
+    # [보완] 종가 데이터가 0인 경우를 방지하기 위해 정상적인 종가를 매핑
+    df_valid_price = df[df['종가'] > 0].sort_values(by='일자' if '일자' in df.columns else df.index)
+    if not df_valid_price.empty:
+        latest_prices = df_valid_price.groupby('종목명')['종가'].last().to_dict()
+    else:
+        latest_prices = df.sort_values(by='일자' if '일자' in df.columns else df.index).groupby('종목명')['종가'].last().to_dict()
 
-        # 💡 [보완] 종가 데이터가 0인 경우를 방지하기 위해 0인 값은 제외하고 가장 최근의 정상적인 종가를 매핑
-        df_valid_price = df[df['종가'] > 0].sort_values(by='일자' if '일자' in df.columns else df.index)
-        if not df_valid_price.empty:
-            latest_prices = df_valid_price.groupby('종목명')['종가'].last().to_dict()
-        else:
-            latest_prices = df.sort_values(by='일자' if '일자' in df.columns else df.index).groupby('종목명')[
-                '종가'].last().to_dict()
+    type_mapping = df.groupby('종목명')['종류'].last().to_dict()
 
-        type_mapping = df.groupby('종목명')['종류'].last().to_dict()
+    portfolio = df_buy.groupby(['계좌', '종목명']).agg(
+        총매입가=('투자금', 'sum'),
+        보유수량=('수량', 'sum')
+    ).reset_index()
 
-        portfolio = df_buy.groupby(['계좌', '종목명']).agg(
-            총매입가=('투자금', 'sum'),
-            보유수량=('수량', 'sum')
-        ).reset_index()
+    portfolio['종류'] = portfolio['종목명'].map(type_mapping)
 
-        portfolio['종류'] = portfolio['종목명'].map(type_mapping)
+    # 기본값 매핑 후 여전히 0이거나 없는 항목 처리
+    portfolio['currently_price'] = portfolio['종목명'].map(latest_prices).fillna(0)
 
-        # 💡 기본값 매핑 후 여전히 0이거나 없는 항목 처리
-        portfolio['currently_price'] = portfolio['종목명'].map(latest_prices).fillna(0)
+    portfolio['평가금액'] = np.where(
+        (portfolio['currently_price'] == 0) & (portfolio['종류'] == 'ELS'),
+        portfolio['총매입가'],
+        portfolio['보유수량'] * portfolio['currently_price']
+    )
+    portfolio['총수익'] = portfolio['평가금액'] - portfolio['총매입가']
+    portfolio['수익률'] = np.where(portfolio['총매입가'] > 0, (portfolio['총수익'] / portfolio['총매입가']) * 100, 0)
 
-        portfolio['평가금액'] = np.where(
-            (portfolio['currently_price'] == 0) & (portfolio['종류'] == 'ELS'),
-            portfolio['총매입가'],
-            portfolio['보유수량'] * portfolio['currently_price']
-        )
-        portfolio['총수익'] = portfolio['평가금액'] - portfolio['총매입가']
-        portfolio['수익률'] = np.where(portfolio['총매입가'] > 0, (portfolio['총수익'] / portfolio['총매입가']) * 100, 0)
-
+# -----------------------------------------------------------------------------
+# 3. 화면 렌더링 부 (portfolio가 데이터가 있을 때만 실행)
+# -----------------------------------------------------------------------------
+if not portfolio.empty:
     # 계좌 정렬 순서 정의
     raw_accounts = [acc for acc in portfolio['계좌'].unique() if acc not in ['nan', '', 'None']]
     active_accounts = [acc for acc in raw_accounts if acc != 'ISA']
@@ -380,7 +387,7 @@ def get_dividend_profit(tab_name, full_df):
 
 
     # -------------------------------------------------------------------------
-    # 2. 📈 메인 포트폴리오 총괄표 (SUMMARY)
+    # 4. 📈 메인 포트폴리오 총괄표 (SUMMARY)
     # -------------------------------------------------------------------------
     with tabs[0]:
         if active_portfolio.empty:
@@ -449,8 +456,7 @@ def get_dividend_profit(tab_name, full_df):
                 legend=dict(title=dict(text='자산 구분', font=dict(color='#FFFFFF')), font=dict(color='#FFFFFF')),
                 margin=dict(t=50, b=20, l=10, r=10)
             )
-            # 💡 [문법 변경 반영] use_container_width=True 대신 width='stretch' 사용
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
 
             # -----------------------------------------------------------------
             # 원금대비수익률 추이 시각화 그래프
@@ -515,14 +521,12 @@ def get_dividend_profit(tab_name, full_df):
                     yaxis2=dict(title='수익률 (%)', side='right', overlaying='y', showgrid=False, ticksuffix='%'),
                     margin=dict(t=40, b=60, l=10, r=10)
                 )
-                # 💡 [문법 변경 반영] use_container_width=True 대신 width='stretch' 사용
-                st.plotly_chart(fig_growth, width='stretch')
+                st.plotly_chart(fig_growth, use_container_width=True)
             else:
                 st.info("📊 '원금대비수익률' 시트 데이터를 불러오지 못했거나 테이블이 비어있습니다. Streamlit Cloud의 Secrets에 기입된 GID 정보를 다시 한 번 확인해 주세요.")
 
-
     # -------------------------------------------------------------------------
-    # 3. 개별 계좌별 상세 내역 탭 리스트업 루프
+    # 5. 개별 계좌별 상세 내역 탭 리스트업 루프
     # -------------------------------------------------------------------------
     for i, acc in enumerate(final_account_order):
         with tabs[i + 1]:
@@ -623,3 +627,5 @@ def get_dividend_profit(tab_name, full_df):
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+else:
+    st.info("📊 구글 시트로부터 매수일지 데이터를 가져오지 못했거나 내용이 비어있습니다.")
