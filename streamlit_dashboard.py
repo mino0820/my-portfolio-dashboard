@@ -29,7 +29,8 @@ except Exception as e:
     st.stop()
 
 
-@st.cache_data(ttl=60)
+# 디버깅 및 캐시 리프레시를 위해 원격 환경에서 확실히 작동하도록 ttl 조정 및 보완
+@st.cache_data(ttl=30)  # Cloud 환경 안정성을 위해 30초로 단축 조정
 def load_sheet_by_gid(base_url, gid):
     try:
         sheet_id_match = re.search(r'/d/([a-zA-Z0-9-_]+)', base_url)
@@ -44,21 +45,8 @@ def load_sheet_by_gid(base_url, gid):
         df = df[[c for c in df.columns if not c.startswith('Unnamed:')]]
         return df
     except Exception as e:
-        st.sidebar.warning(f"💡 GID {gid} 로드 중 참고: {e}")
+        st.sidebar.error(f"❌ GID {gid} 로드 실패: {e}")
         return None
-
-
-# 💡 실시간 국내 주가 조회를 위한 경량 함수 추가 (네이버 금융 API 활용)
-def get_current_kr_price(ticker):
-    try:
-        url = f"https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode())
-            price_str = data['result']['areas'][0]['datas'][0]['nv']
-            return float(price_str)
-    except:
-        return 0
 
 
 st.sidebar.header("🔄 데이터 설정")
@@ -67,7 +55,7 @@ if st.sidebar.button("🔄 구글 시트 새로고침"):
     st.rerun()
 
 # -----------------------------------------------------------------------------
-# ✨ [레이아웃 깨짐 교정] 토스 대시보드 전용 정밀 CSS 디자인 시트
+# ✨ [레이아웃 깨짐 교정] 토스 대시보드 전용 정밀 CSS 디자인 시트 (디자인 통일 완료)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -156,15 +144,19 @@ df_deposit_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_입금액)
 
 def categorize_kind(k):
     k_str = str(k).upper()
-    if 'ETF' in k_str:
-        return 'ETF'
-    if '이자' in k_str:
-        return '이자'
-    if 'ELS' in k_str:
-        return 'ELS'
-    if '채권' in k_str:
-        return '채권'
+    if 'ETF' in k_str: return 'ETF'
+    if '이자' in k_str: return '이자'
+    if 'ELS' in k_str: return 'ELS'
+    if '채권' in k_str: return '채권'
     return '개별종목'
+
+
+# 데이터 정밀 정제 함수 (숫자 외 문자열 제거 방어코드 강화)
+def clean_numeric_series(series):
+    if series.dtype == 'object':
+        # 숫자, 마이너스(-), 소수점(.)을 제외한 모든 문자(쉼표, 공백, 통화기호 등) 제거
+        return pd.to_numeric(series.astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce').fillna(0)
+    return pd.to_numeric(series, errors='coerce').fillna(0)
 
 
 # 입금액 데이터 전처리
@@ -175,28 +167,21 @@ if df_deposit_raw is not None:
         if df_deposit[col].dtype == 'object':
             df_deposit[col] = df_deposit[col].astype(str).str.strip()
     if '금액' in df_deposit.columns:
-        if df_deposit['금액'].dtype == 'object':
-            df_deposit['금액'] = df_deposit['금액'].str.replace(',', '').str.strip()
-        df_deposit['금액'] = pd.to_numeric(df_deposit['금액'], errors='coerce').fillna(0)
+        df_deposit['금액'] = clean_numeric_series(df_deposit['금액'])
 
 
-# 탭/계좌별 총 입금액 계산 함수
 def get_total_deposit(tab_name):
-    if df_deposit is None or df_deposit.empty:
-        return 0
+    if df_deposit is None or df_deposit.empty: return 0
     if tab_name == "SUMMARY":
         target_accounts = ['ISA2', 'SUPER365', '연저펀1', '연저펀2']
     elif tab_name == "CMA":
         target_accounts = ['SUPER365']
-    elif tab_name in ['ISA2', '연저펀1', '연저펀2', 'ISA']:
-        target_accounts = [tab_name]
     else:
         target_accounts = [tab_name]
     filtered_df = df_deposit[df_deposit['계좌'].isin(target_accounts)]
     return filtered_df['금액'].sum()
 
 
-# 탭/계좌별 배당수익 계산 함수
 def get_dividend_profit(tab_name, full_df):
     if full_df is None or full_df.empty or '구분' not in full_df.columns or '총액' not in full_df.columns:
         return 0
@@ -206,10 +191,7 @@ def get_dividend_profit(tab_name, full_df):
     else:
         target_accounts = [tab_name]
 
-    filtered_df = full_df[
-        (full_df['계좌'].isin(target_accounts)) &
-        (full_df['구분'] == '배당수입')
-        ].copy()
+    filtered_df = full_df[(full_df['계좌'].isin(target_accounts)) & (full_df['구분'] == '배당수입')].copy()
 
     if '종목명' in filtered_df.columns:
         exclude_keywords = ['네이버통장', '발행어음', '네이버페이', '예탁금이용료']
@@ -221,35 +203,28 @@ def get_dividend_profit(tab_name, full_df):
     return filtered_df['총액'].abs().sum()
 
 
-# -----------------------------------------------------------------------------
-# 2. 매수일지(df_raw) 데이터 정밀 전처리 및 portfolio 생성
-# -----------------------------------------------------------------------------
-df = None
-portfolio = pd.DataFrame()
-
-# 💡 보유 종목 종가 에러 방지를 위한 주식 단축코드 매핑 사전 생성
-TICKER_MAP = {
-    'HD현대일렉트릭': '267260',
-    '삼성전자': '005930'
-}
-
 if df_raw is not None:
     df = df_raw.copy()
     for col in df.columns:
         if df[col].dtype == 'object':
             df[col] = df[col].astype(str).str.strip()
 
-    # 숫자형 데이터 정밀 전처리
+    # 숫자형 데이터 정밀 전처리 시스템 교체 (정규식 기반 방어막 추가)
     numeric_cols = ['거래금액', '수량', '투자금', '수수료', '총액', '종가']
     for col in numeric_cols:
         if col in df.columns:
-            if df[col].dtype == 'object':
-                df[col] = df[col].str.replace(',', '').str.replace('₩', '').str.strip()
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            df[col] = clean_numeric_series(df[col])
+
+    # [디버깅용 안전장치] 만약 '종가'가 전부 0으로 파싱되었다면 사용자에게 알림
+    if df['종가'].sum() == 0 and not df.empty:
+        st.error("⚠️ 경고: 구글 시트에서 '종가' 데이터를 숫자로 읽어오지 못했습니다. 시트 내 문자열 포맷을 확인하세요.")
 
     # 자산 현황용 데이터 가공 (매수 기준)
     df_buy = df[df['구분'] == '매수'].copy()
 
+    # 정렬 및 그룹화 기준 보완
+    sort_col = '일자' if '일자' in df.columns else df.index
+    latest_prices = df.sort_values(by=sort_col).groupby('종목명')['종가'].last().to_dict()
     type_mapping = df.groupby('종목명')['종류'].last().to_dict()
 
     portfolio = df_buy.groupby(['계좌', '종목명']).agg(
@@ -258,23 +233,7 @@ if df_raw is not None:
     ).reset_index()
 
     portfolio['종류'] = portfolio['종목명'].map(type_mapping)
-
-    # 💡 [핵심 해결 로직] 구글시트 종가 대신, 파이썬이 실시간 API 주가를 가져와 매핑하도록 변경
-    # 시트 내 백업 종가 먼저 매핑
-    df_valid_price = df[df['종가'] > 0].sort_values(by='일자' if '일자' in df.columns else df.index)
-    backup_prices = df_valid_price.groupby('종목명')['종가'].last().to_dict() if not df_valid_price.empty else {}
-
-    current_prices = {}
-    for name in portfolio['종목명'].unique():
-        if name in TICKER_MAP:
-            api_price = get_current_kr_price(TICKER_MAP[name])
-            if api_price > 0:
-                current_prices[name] = api_price
-                continue
-        # 매핑 사전에 없거나 API 실패 시 구글 시트 백업 값 사용
-        current_prices[name] = backup_prices.get(name, 0)
-
-    portfolio['currently_price'] = portfolio['종목명'].map(current_prices).fillna(0)
+    portfolio['currently_price'] = portfolio['종목명'].map(latest_prices)
 
     portfolio['평가금액'] = np.where(
         (portfolio['currently_price'] == 0) & (portfolio['종류'] == 'ELS'),
@@ -284,17 +243,11 @@ if df_raw is not None:
     portfolio['총수익'] = portfolio['평가금액'] - portfolio['총매입가']
     portfolio['수익률'] = np.where(portfolio['총매입가'] > 0, (portfolio['총수익'] / portfolio['총매입가']) * 100, 0)
 
-# -----------------------------------------------------------------------------
-# 3. 화면 렌더링 부 (portfolio가 데이터가 있을 때만 실행)
-# -----------------------------------------------------------------------------
-if not portfolio.empty:
-    # 계좌 정렬 순서 정의
     raw_accounts = [acc for acc in portfolio['계좌'].unique() if acc not in ['nan', '', 'None']]
     active_accounts = [acc for acc in raw_accounts if acc != 'ISA']
     inactive_accounts = [acc for acc in raw_accounts if acc == 'ISA']
     final_account_order = active_accounts + inactive_accounts
 
-    # 탭 구성
     tab_titles = ["📈 SUMMARY"] + [f"💳 {acc}" for acc in final_account_order]
     tabs = st.tabs(tab_titles)
 
@@ -302,7 +255,6 @@ if not portfolio.empty:
     active_portfolio = active_portfolio[active_portfolio['종류'] != '채권']
 
 
-    # 공통 컴포넌트 함수 정의
     def render_summary_and_weights():
         total_inv_all = active_portfolio['총매입가'].sum()
         total_eva_all = active_portfolio['평가금액'].sum()
@@ -352,7 +304,7 @@ if not portfolio.empty:
             st.markdown("<h3 style='font-size:17px; margin-bottom:10px;'>🪙 자산군별 투자금액 비중</h3>", unsafe_allow_html=True)
             df_type_inv = active_portfolio.groupby('종류')['총매입가'].sum().reset_index()
             df_type_inv = df_type_inv.sort_values(by='총매입가', ascending=False).reset_index(drop=True)
-            df_type_inv['비중'] = (df_type_inv['총매입가'] / total_inv_all) * 100
+            df_type_inv['비중'] = (df_type_inv['총매입가'] / total_inv_all) * 100 if total_inv_all > 0 else 0
             top_inv_pct = df_type_inv.loc[0, '비중'] if not df_type_inv.empty else 0
             st.progress(int(top_inv_pct) / 100 if top_inv_pct <= 100 else 1.0,
                         text=f"최대 비중 자산군: {df_type_inv.loc[0, '종류'] if not df_type_inv.empty else ''} ({top_inv_pct:.1f}%)")
@@ -367,7 +319,7 @@ if not portfolio.empty:
             st.markdown("<h3 style='font-size:17px; margin-bottom:10px;'>📈 자산군별 평가금액 비중</h3>", unsafe_allow_html=True)
             df_type_eva = active_portfolio.groupby('종류').agg({'평가금액': 'sum', '총매입가': 'sum'}).reset_index()
             df_type_eva = df_type_eva.sort_values(by='평가금액', ascending=False).reset_index(drop=True)
-            df_type_eva['비중'] = (df_type_eva['평가금액'] / total_eva_all) * 100
+            df_type_eva['비중'] = (df_type_eva['평가금액'] / total_eva_all) * 100 if total_eva_all > 0 else 0
             df_type_eva['손익'] = df_type_eva['평가금액'] - df_type_eva['총매입가']
             top_eva_pct = df_type_eva.loc[0, '비중'] if not df_type_eva.empty else 0
             st.progress(int(top_eva_pct) / 100 if top_eva_pct <= 100 else 1.0,
@@ -415,9 +367,6 @@ if not portfolio.empty:
                     """, unsafe_allow_html=True)
 
 
-    # -------------------------------------------------------------------------
-    # 4. 📈 메인 포트폴리오 총괄표 (SUMMARY)
-    # -------------------------------------------------------------------------
     with tabs[0]:
         if active_portfolio.empty:
             st.info("보유 자산 데이터가 확인되지 않습니다.")
@@ -432,7 +381,6 @@ if not portfolio.empty:
 
             analysis_mode = st.radio("월별/연도별 기준 선택", ["월별 추이", "연도별 추이"], horizontal=True)
 
-            # 데이터 가공
             df_dividend = df[df['구분'].astype(str).str.contains('배당|이자', na=False)].copy()
             df_dividend['일자_정제'] = pd.to_datetime(df_dividend['일자'].astype(str).str.replace('.', '-', regex=False),
                                                   errors='coerce')
@@ -446,49 +394,36 @@ if not portfolio.empty:
                 df_dividend['표시'] = df_dividend['일자_정제'].dt.year.astype(str)
                 title_text = "연도별 배당/이자 수입"
 
-            df_plot = df_dividend.groupby(['표시', '자산구분'])['실수령금'].sum().reset_index()
-            df_plot = df_plot.sort_values(by='표시', ascending=True).reset_index(drop=True)
-            df_total = df_plot.groupby('표시')['실수령금'].sum().reset_index()
+            if not df_dividend.empty:
+                df_plot = df_dividend.groupby(['표시', '자산구분'])['실수령금'].sum().reset_index()
+                df_plot = df_plot.sort_values(by='표시', ascending=True).reset_index(drop=True)
+                df_total = df_plot.groupby('표시')['실수령금'].sum().reset_index()
 
-            fig = px.bar(
-                df_plot, x='표시', y='실수령금', color='자산구분',
-                title=title_text,
-                barmode='stack',
-                color_discrete_map={
-                    'ETF': '#3182F6',
-                    '이자': '#00D4B2',
-                    '개별종목': '#FF4B4B',
-                    'ELS': '#FF9F43',
-                    '채권': '#A55EEA'
-                }
-            )
-
-            fig.add_trace(
-                go.Scatter(
-                    x=df_total['표시'],
-                    y=df_total['실수령금'],
-                    mode='text',
-                    text=df_total['실수령금'].apply(lambda x: f"{x:,.0f}"),
-                    textposition='top center',
-                    textfont=dict(color='#8B95A1', size=12, family='Pretendard'),
-                    showlegend=False
+                fig = px.bar(
+                    df_plot, x='표시', y='실수령금', color='자산구분', title=title_text, barmode='stack',
+                    color_discrete_map={'ETF': '#3182F6', '이자': '#00D4B2', '개별종목': '#FF4B4B', 'ELS': '#FF9F43',
+                                        '채권': '#A55EEA'}
                 )
-            )
-
-            fig.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#FFFFFF', family='Pretendard'),
-                xaxis=dict(title='', gridcolor='#161B24', showgrid=True, type='category',
-                           categoryorder='category ascending'),
-                yaxis=dict(title='금액 (원)', gridcolor='#161B24', showgrid=True,
-                           range=[0, df_total['실수령금'].max() * 1.15]),
-                legend=dict(title=dict(text='자산 구분', font=dict(color='#FFFFFF')), font=dict(color='#FFFFFF')),
-                margin=dict(t=50, b=20, l=10, r=10)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                fig.add_trace(go.Scatter(
+                    x=df_total['표시'], y=df_total['실수령금'], mode='text',
+                    text=df_total['실수령금'].apply(lambda x: f"{x:,.0f}"),
+                    textposition='top center', textfont=dict(color='#8B95A1', size=12, family='Pretendard'),
+                    showlegend=False
+                ))
+                fig.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#FFFFFF', family='Pretendard'),
+                    xaxis=dict(title='', gridcolor='#161B24', showgrid=True, type='category',
+                               categoryorder='category ascending'),
+                    yaxis=dict(title='금액 (원)', gridcolor='#161B24', showgrid=True,
+                               range=[0, df_total['실수령금'].max() * 1.15 if not df_total.empty else 100]),
+                    legend=dict(title=dict(text='자산 구분', font=dict(color='#FFFFFF')), font=dict(color='#FFFFFF')),
+                    margin=dict(t=50, b=20, l=10, r=10)
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
             # -----------------------------------------------------------------
-            # 원금대비수익률 추이 시각화 그래프
+            # 수익률 추이 시각화 그래프
             # -----------------------------------------------------------------
             df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_원금대비수익률)
 
@@ -500,7 +435,6 @@ if not portfolio.empty:
                     unsafe_allow_html=True)
 
                 df_pr = df_profit_rate_raw.copy()
-
                 if '일자' in df_pr.columns:
                     df_pr['일자_정제'] = df_pr['일자'].astype(str).str.replace('.', '-', regex=False)
                     df_pr['일자_정제'] = df_pr['일자_정제'].apply(lambda x: x + '-01' if len(x) == 7 else x)
@@ -513,38 +447,30 @@ if not portfolio.empty:
                 target_numeric_cols = ['누적입금액', '수익금', '입금액 대비 수익률']
                 for col in target_numeric_cols:
                     if col in df_pr.columns:
-                        if df_pr[col].dtype == 'object':
-                            df_pr[col] = df_pr[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
-                        df_pr[col] = pd.to_numeric(df_pr[col], errors='coerce').fillna(0)
+                        df_pr[col] = clean_numeric_series(df_pr[col])
 
                 df_pr['누적입금액_백만'] = df_pr['누적입금액'] / 1000000
                 df_pr['수익금_백만'] = df_pr['수익금'] / 1000000
 
                 fig_growth = go.Figure()
-
-                fig_growth.add_trace(go.Bar(
-                    x=df_pr['x_axis'], y=df_pr['누적입금액_백만'], name='누적입금액',
-                    marker_color='#5AC8FA', opacity=0.8, yaxis='y1', hovertemplate='%{y:,.1f}백만 원'
-                ))
-
-                fig_growth.add_trace(go.Bar(
-                    x=df_pr['x_axis'], y=df_pr['수익금_백만'], name='수익금',
-                    marker_color='#3182F6', opacity=0.9, yaxis='y1', hovertemplate='%{y:,.1f}백만 원'
-                ))
-
+                fig_growth.add_trace(
+                    go.Bar(x=df_pr['x_axis'], y=df_pr['누적입금액_백만'], name='누적입금액', marker_color='#5AC8FA', opacity=0.8,
+                           yaxis='y1', hovertemplate='%{y:,.1f}백만 원'))
+                fig_growth.add_trace(
+                    go.Bar(x=df_pr['x_axis'], y=df_pr['수익금_백만'], name='수익금', marker_color='#3182F6', opacity=0.9,
+                           yaxis='y1', hovertemplate='%{y:,.1f}백만 원'))
                 fig_growth.add_trace(go.Scatter(
-                    x=df_pr['x_axis'], y=df_pr['입금액 대비 수익률'], name='입금액 대비 수익률',
-                    mode='lines+markers+text', line=dict(color='#F04452', width=3),
-                    marker=dict(size=6, color='#F04452'),
+                    x=df_pr['x_axis'], y=df_pr['입금액 대비 수익률'], name='입금액 대비 수익률', mode='lines+markers+text',
+                    line=dict(color='#F04452', width=3), marker=dict(size=6, color='#F04452'),
                     text=df_pr['입금액 대비 수익률'].apply(lambda x: f"{x:.1f}%" if x != 0 else ""),
-                    textposition='top center', textfont=dict(color='#FFFFFF', size=10, family='Pretendard'),
-                    yaxis='y2', hovertemplate='%{y:.2f}%'
+                    textposition='top center', textfont=dict(color='#FFFFFF', size=10, family='Pretendard'), yaxis='y2',
+                    hovertemplate='%{y:.2f}%'
                 ))
 
                 fig_growth.update_layout(
                     paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color='#FFFFFF', family='Pretendard'), barmode='stack',
-                    hovermode='x unified', showlegend=True,
+                    font=dict(color='#FFFFFF', family='Pretendard'),
+                    barmode='stack', hovermode='x unified', showlegend=True,
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=11)),
                     xaxis=dict(title='', gridcolor='#161B24', showgrid=False, tickangle=-45, type='category'),
                     yaxis=dict(title='금액 (백만 원)', gridcolor='#161B24', showgrid=True, side='left', tickformat=',.0f'),
@@ -553,11 +479,10 @@ if not portfolio.empty:
                 )
                 st.plotly_chart(fig_growth, use_container_width=True)
             else:
-                st.info(
-                    "📊 '원금대비수익률' 시트 데이터를 불러오지 못했거나 테이블이 비어있습니다. Streamlit Cloud의 Secrets에 기입된 GID 정보를 다시 한 번 확인해 주세요.")
+                st.info("원금대비수익률 시트 데이터를 불러오지 못했거나 데이터가 비어있습니다.")
 
     # -------------------------------------------------------------------------
-    # 5. 개별 계좌별 상세 내역 탭 리스트업 루프
+    # 3. 개별 계좌별 상세 내역 탭 리스트업 루프
     # -------------------------------------------------------------------------
     for i, acc in enumerate(final_account_order):
         with tabs[i + 1]:
@@ -566,13 +491,11 @@ if not portfolio.empty:
             part_a = acc_df[(acc_df['보유수량'] > 0) | (acc_df['종류'] == 'ELS')].sort_values(by='수익률', ascending=False)
             part_b = acc_df[(acc_df['보유수량'] == 0) & (acc_df['종류'] != 'ELS')]
 
-            # 계좌별 1단 데이터 연산
             acc_investment = part_a['총매입가'].sum()
             acc_evaluation = part_a['평가금액'].sum()
             acc_profit = acc_evaluation - acc_investment
             acc_rate = (acc_profit / acc_investment * 100) if acc_investment > 0 else 0
 
-            # 계좌별 2단 신규 조건 연산 (필터링 자동 내장)
             acc_deposit = get_total_deposit(acc)
             acc_dividend = get_dividend_profit(acc, df)
             acc_dividend_rate = (acc_dividend / acc_deposit * 100) if acc_deposit > 0 else 0
@@ -585,7 +508,6 @@ if not portfolio.empty:
                     "<p style='color: #9EAAB8 !important; font-size: 13px; margin-bottom: -5px;'>💡 이 계좌는 현재 미사용 중이며, 과거 거래 내역 요약입니다.</p>",
                     unsafe_allow_html=True)
 
-            # 개별 계좌 상세 탭 1단 카드
             st.markdown(f"""
             <div class="toss-summary-container" style="background-color: #171C26;">
                 <div class="toss-summary-item"><div class="toss-summary-label">투자금액</div><div class="toss-summary-val">{acc_investment:,.0f}원</div></div>
@@ -598,12 +520,10 @@ if not portfolio.empty:
             </div>
             """, unsafe_allow_html=True)
 
-            # 개별 계좌 상세 탭 2단 카드 (배당수익 디자인 통일 적용)
             st.markdown(f"""
             <div class="toss-summary-container" style="background-color: #171C26; margin-top: -10px; margin-bottom: 25px;">
                 <div class="toss-summary-item">
-                    <div class="toss-summary-label">입금액</div>
-                    <div class="toss-summary-val">{acc_deposit:,.0f}원</div>
+                    <div class="toss-summary-label">입금액</div><div class="toss-summary-val">{acc_deposit:,.0f}원</div>
                 </div>
                 <div class="toss-summary-item" style="border-left: 1px solid #1C222E; border-right: 1px solid #1C222E;">
                     <div class="toss-summary-label">배당수익</div>
@@ -619,7 +539,6 @@ if not portfolio.empty:
             """, unsafe_allow_html=True)
 
             col_left, col_right = st.columns(2)
-
             with col_left:
                 st.markdown("<h4 style='font-size: 16px; color:#CCD2DB; margin-top:5px;'>보유 종목</h4>",
                             unsafe_allow_html=True)
@@ -631,10 +550,7 @@ if not portfolio.empty:
 
                     st.markdown(f"""
                     <div class="toss-stock-row">
-                        <div class="stock-left-box">
-                            <span class="stock-main-name">{row['종목명']}</span>
-                            <span class="stock-sub-qty">{qty_str}</span>
-                        </div>
+                        <div class="stock-left-box"><span class="stock-main-name">{row['종목명']}</span><span class="stock-sub-qty">{qty_str}</span></div>
                         <div class="stock-right-box">
                             <span class="stock-main-price">{row['평가금액']:,.0f} 원</span>
                             <span class="stock-sub-qty {trend_class}">{sign}{row['총수익']:,.0f}원 ({sign}{row['수익률']:.2f}%)</span>
@@ -658,5 +574,3 @@ if not portfolio.empty:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-else:
-    st.info("📊 구글 시트로부터 매수일지 데이터를 가져오지 못했거나 내용이 비어있습니다.")
