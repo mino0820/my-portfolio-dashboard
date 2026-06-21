@@ -204,41 +204,53 @@ def get_dividend_profit(tab_name, full_df):
 
     return filtered_df['총액'].abs().sum()
 
+    # 기존 코드의 데이터 전처리 부분(if df_raw is not None:)을 아래 코드로 대체하거나 전체 반영해 보세요.
 
-if df_raw is not None:
-    df = df_raw.copy()
-    for col in df.columns:
-        if df[col].dtype == 'object':
-            df[col] = df[col].astype(str).str.strip()
-
-    # 숫자형 데이터 정밀 전처리
-    numeric_cols = ['거래금액', '수량', '투자금', '수수료', '총액', '종가']
-    for col in numeric_cols:
-        if col in df.columns:
+    if df_raw is not None:
+        df = df_raw.copy()
+        for col in df.columns:
             if df[col].dtype == 'object':
-                df[col] = df[col].str.replace(',', '').str.strip()
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                df[col] = df[col].astype(str).str.strip()
 
-    # 자산 현황용 데이터 가공 (매수 기준)
-    df_buy = df[df['구분'] == '매수'].copy()
-    latest_prices = df.sort_values(by='일자' if '일자' in df.columns else df.index).groupby('종목명')['종가'].last().to_dict()
-    type_mapping = df.groupby('종목명')['종류'].last().to_dict()
+        # 숫자형 데이터 정밀 전처리 (공백 및 쉼표 완전 제거 후 숫자로 강제 변환)
+        numeric_cols = ['거래금액', '수량', '투자금', '수수료', '총액', '종가']
+        for col in numeric_cols:
+            if col in df.columns:
+                if df[col].dtype == 'object':
+                    # 만약 GOOGLEFINANCE 결과에 원화 기호(₩)나 특수문자가 섞여 들어올 경우를 대비해 정제
+                    df[col] = df[col].str.replace(',', '').str.replace('₩', '').str.strip()
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    portfolio = df_buy.groupby(['계좌', '종목명']).agg(
-        총매입가=('투자금', 'sum'),
-        보유수량=('수량', 'sum')
-    ).reset_index()
+        # 자산 현황용 데이터 가공 (매수 기준)
+        df_buy = df[df['구분'] == '매수'].copy()
 
-    portfolio['종류'] = portfolio['종목명'].map(type_mapping)
-    portfolio['currently_price'] = portfolio['종목명'].map(latest_prices)
+        # 💡 [보완] 종가 데이터가 0인 경우를 방지하기 위해 0인 값은 제외하고 가장 최근의 정상적인 종가를 매핑
+        df_valid_price = df[df['종가'] > 0].sort_values(by='일자' if '일자' in df.columns else df.index)
+        if not df_valid_price.empty:
+            latest_prices = df_valid_price.groupby('종목명')['종가'].last().to_dict()
+        else:
+            latest_prices = df.sort_values(by='일자' if '일자' in df.columns else df.index).groupby('종목명')[
+                '종가'].last().to_dict()
 
-    portfolio['평가금액'] = np.where(
-        (portfolio['currently_price'] == 0) & (portfolio['종류'] == 'ELS'),
-        portfolio['총매입가'],
-        portfolio['보유수량'] * portfolio['currently_price']
-    )
-    portfolio['총수익'] = portfolio['평가금액'] - portfolio['총매입가']
-    portfolio['수익률'] = np.where(portfolio['총매입가'] > 0, (portfolio['총수익'] / portfolio['총매입가']) * 100, 0)
+        type_mapping = df.groupby('종목명')['종류'].last().to_dict()
+
+        portfolio = df_buy.groupby(['계좌', '종목명']).agg(
+            총매입가=('투자금', 'sum'),
+            보유수량=('수량', 'sum')
+        ).reset_index()
+
+        portfolio['종류'] = portfolio['종목명'].map(type_mapping)
+
+        # 💡 기본값 매핑 후 여전히 0이거나 없는 항목 처리
+        portfolio['currently_price'] = portfolio['종목명'].map(latest_prices).fillna(0)
+
+        portfolio['평가금액'] = np.where(
+            (portfolio['currently_price'] == 0) & (portfolio['종류'] == 'ELS'),
+            portfolio['총매입가'],
+            portfolio['보유수량'] * portfolio['currently_price']
+        )
+        portfolio['총수익'] = portfolio['평가금액'] - portfolio['총매입가']
+        portfolio['수익률'] = np.where(portfolio['총매입가'] > 0, (portfolio['총수익'] / portfolio['총매입가']) * 100, 0)
 
     # 계좌 정렬 순서 정의
     raw_accounts = [acc for acc in portfolio['계좌'].unique() if acc not in ['nan', '', 'None']]
