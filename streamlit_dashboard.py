@@ -23,6 +23,13 @@ try:
     GID_연도별수익 = st.secrets["google_sheet"]["gid_yearly_profit"]
     GID_입금액 = st.secrets["google_sheet"]["gid_deposit"]
     GID_원금대비수익률 = st.secrets["google_sheet"]["gid_profit_rate"]
+
+    # 💡 '종가' 시트의 GID 가져오기 (Secrets에 없을 경우를 대비해 기본값 0 처리 및 예외 방어)
+    try:
+        GID_종가시트 = st.secrets["google_sheet"]["gid_closing_price"]
+    except:
+        # Secrets에 아직 'gid_closing_price' 키가 지정되지 않았다면 안내 후 임시 지정 가능하도록 처리
+        GID_종가시트 = None
 except Exception as e:
     st.error(
         "🔒 Streamlit Cloud의 Settings -> Secrets 설정에 필요한 구글 시트 정보(url, gid_buy_log, gid_yearly_profit, gid_deposit, gid_profit_rate)가 누락되었거나 올바르지 않습니다. 설정을 확인해주세요.")
@@ -32,6 +39,8 @@ except Exception as e:
 # 디버깅 및 캐시 리프레시를 위해 원격 환경에서 확실히 작동하도록 ttl 조정 및 보완
 @st.cache_data(ttl=30)  # Cloud 환경 안정성을 위해 30초로 단축 조정
 def load_sheet_by_gid(base_url, gid):
+    if gid is None:
+        return None
     try:
         sheet_id_match = re.search(r'/d/([a-zA-Z0-9-_]+)', base_url)
         if not sheet_id_match:
@@ -141,6 +150,9 @@ df_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_매수일지)
 df_yearly_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_연도별수익)
 df_deposit_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_입금액)
 
+# 🚀 구글 시트에서 독립된 '종가' 탭 데이터 직접 가져오기
+df_closing_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GID_종가시트)
+
 
 def categorize_kind(k):
     k_str = str(k).upper()
@@ -203,21 +215,27 @@ def get_dividend_profit(tab_name, full_df):
     return filtered_df['총액'].abs().sum()
 
 
+# 🚀 '종가' 시트 기반의 최신 딕셔너리 매핑 데이터 가공
+closing_sheet_prices = {}
+if df_closing_raw is not None and not df_closing_raw.empty:
+    df_c_clean = df_closing_raw.copy()
+    # 열 이름 공백 제거 보완
+    df_c_clean.columns = df_c_clean.columns.str.strip()
+    if '종목명' in df_c_clean.columns and '종가' in df_c_clean.columns:
+        df_c_clean['종가'] = clean_numeric_series(df_c_clean['종가'])
+        closing_sheet_prices = dict(zip(df_c_clean['종목명'].astype(str).str.strip(), df_c_clean['종가']))
+
 if df_raw is not None:
     df = df_raw.copy()
     for col in df.columns:
         if df[col].dtype == 'object':
             df[col] = df[col].astype(str).str.strip()
 
-    # 숫자형 데이터 정밀 전처리 시스템 교체 (정규식 기반 방어막 추가)
+    # 숫자형 데이터 정밀 전처리 시스템 교체
     numeric_cols = ['거래금액', '수량', '투자금', '수수료', '총액', '종가']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = clean_numeric_series(df[col])
-
-    # [디버깅용 안전장치] 만약 '종가'가 전부 0으로 파싱되었다면 사용자에게 알림
-    if df['종가'].sum() == 0 and not df.empty:
-        st.error("⚠️ 경고: 구글 시트에서 '종가' 데이터를 숫자로 읽어오지 못했습니다. 시트 내 문자열 포맷을 확인하세요.")
 
     # 자산 현황용 데이터 가공 (매수 기준)
     df_buy = df[df['구분'] == '매수'].copy()
@@ -233,13 +251,25 @@ if df_raw is not None:
     ).reset_index()
 
     portfolio['종류'] = portfolio['종목명'].map(type_mapping)
+
+    # 🚀 [종가 매핑 강화 로직]
+    # 1순위: '매수일지' 시트 내부의 마지막 종가 추출
     portfolio['currently_price'] = portfolio['종목명'].map(latest_prices)
 
+    # 2순위 교정: 만약 매수일지에서 긁어온 종가가 0원이거나 누락되었다면, 독립된 '종가' 시트의 데이터를 덮어씌움
+    portfolio['currently_price'] = portfolio.apply(
+        lambda r: closing_sheet_prices.get(str(r['종목명']).strip(), r['currently_price'])
+        if r['currently_price'] == 0 else r['currently_price'],
+        axis=1
+    ).fillna(0)
+
+    # 3순위 최종 보완: 구글 수식 전체 오작동 및 딜레이로 양쪽 시트 모두 0원일 경우 상단 원금(총매입가) 보존 처리
     portfolio['평가금액'] = np.where(
         (portfolio['currently_price'] == 0),
-        portfolio['총매입가'],  # 종가를 못 가져오면(0이면) 일단 원금을 평가금액으로 잡아서 0원 방지
+        portfolio['총매입가'],
         portfolio['보유수량'] * portfolio['currently_price']
     )
+
     portfolio['총수익'] = portfolio['평가금액'] - portfolio['총매입가']
     portfolio['수익률'] = np.where(portfolio['총매입가'] > 0, (portfolio['총수익'] / portfolio['총매입가']) * 100, 0)
 
