@@ -122,35 +122,49 @@ def update_google_sheet_prices():
 def load_sheet_by_gid(base_url, gid):
     try:
         sheet_id = get_spreadsheet_id(GOOGLE_SHEET_URL)
-        sh = gc.open_by_key(sheet_id)  # 이미 성공한 인증 객체(gc)로 시트 열기
-
-        # GID 값과 일치하는 워크시트 탭 찾기
-        worksheet = None
-        for ws in sh.worksheets():
-            if str(ws.id) == str(gid):
-                worksheet = ws
-                break
-
-        if worksheet is None:
-            return None
-
-        # 데이터를 안전하게 리스트로 가져와 데이터프레임화
-        all_values = worksheet.get_all_values()
-        if not all_values:
-            return pd.DataFrame()
-
-        df = pd.DataFrame(all_values[1:], columns=all_values[0])
+        export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+        df = pd.read_csv(export_url)
         df.columns = df.columns.str.strip()
-        df = df[[c for c in df.columns if c and not c.startswith('Unnamed:')]]
+        df = df[[c for c in df.columns if not c.startswith('Unnamed:')]]
 
-        # 데이터 내 공백 정제
-        for col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
+        # 🔍 [디버그 로그] 구글 시트 원본 로드 확인
+        st.sidebar.write(f"📊 [디버그] GID {gid} 로드 완료 - 행 개수: {len(df)}개")
+        if not df.empty:
+            st.sidebar.write(f"   ↳ 컬럼 목록: {list(df.columns)}")
+            # 데이터가 잘 들어오는지 첫 번째 행 맛보기 출력
+            st.sidebar.caption(f"   ↳ 첫 행 데이터 샘플: {df.iloc[0].to_dict()}")
 
         return df
     except Exception as e:
-        st.sidebar.error(f"❌ 데이터 읽기 실패 (GID {gid}): {e}")
+        st.sidebar.error(f"❌ GID {gid} 로드 중 에러 발생: {e}")
         return None
+
+
+# -----------------------------------------------------------------------------
+# 🔄 데이터 로드부 통합 및 수치 데이터 디버깅 검증
+# -----------------------------------------------------------------------------
+df_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_매수일지)
+df_yearly_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_연도별수익)
+df_deposit_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_입금액)
+
+# 🔍 [디버그 로그] 전처리 전 수치 데이터 변환 검증
+if df_raw is not None and not df_raw.empty:
+    st.sidebar.info("⚙️ [디버그] 매수일지 숫자 변환 검증 중...")
+
+    # 임시로 복사해서 변환 전후 행 개수나 NaN 발생 여부 체크
+    df_check = df_raw.copy()
+    for col in ['투자금', '수량', '종가']:
+        if col in df_check.columns:
+            if df_check[col].dtype == 'object':
+                df_check[col] = df_check[col].str.replace(',', '').str.strip()
+            converted = pd.to_numeric(df_check[col], errors='coerce')
+            nan_count = converted.isna().sum()
+            st.sidebar.write(f"   ↳ [{col}] 변환 완료 (결측치/NaN 환원 개수: {nan_count}개)")
+
+    # 매수 구분이 잘 필터링 되는지 확인
+    buy_count = len(df_raw[df_raw['구분'] == '매수'])
+    div_count = len(df_raw[df_raw['구분'] == '배당수입'])
+    st.sidebar.write(f"   ↳ '구분' 필터링 결과 -> 매수: {buy_count}건, 배당수입: {div_count}건")
 
 # -----------------------------------------------------------------------------
 # 🔄 사이드바 데이터 설정 영역
@@ -247,14 +261,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# 3. 데이터 가져오기 및 분류 처리 함수 정의
-# -----------------------------------------------------------------------------
-df_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_매수일지)
-df_yearly_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_연도별수익)
-df_deposit_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_입금액)
 
-
+# -----------------------------------------------------------------------------
+# 3. 비즈니스 로직 및 공통 전처리 함수 정의
+# -----------------------------------------------------------------------------
 def categorize_kind(k):
     k_str = str(k).upper()
     if 'ETF' in k_str:
@@ -599,7 +609,7 @@ if df_raw is not None:
                 st.info("원금대비수익률 시트 데이터를 불러오지 못했거나 데이터가 비어있습니다.")
 
     # -------------------------------------------------------------------------
-    # 4. 개별 계좌별 상세 내역 탭 리스트업 루프 (끊긴 코드 마무리 완성)
+    # 4. 개별 계좌별 상세 내역 탭 리스트업 루프 (✨ 마감 및 끊김 에러 완벽 해결)
     # -------------------------------------------------------------------------
     for i, acc in enumerate(final_account_order):
         with tabs[i + 1]:
@@ -649,27 +659,44 @@ if df_raw is not None:
             </div>
             """, unsafe_allow_html=True)
 
-            # 끊겼던 계좌별 하단 종목 출력 파트 완성
+            # 🛠️ [마감 완료] 끊겼던 자산 리스트 컴포넌트 출력문 구현
             if part_a.empty and part_b.empty:
                 st.info("이 계좌에 등록된 종목 내역이 없습니다.")
             else:
-                st.markdown("<h4 style='font-size: 16px; color:#CCD2DB; margin-bottom:12px;'>보유 중인 자산</h4>",
-                            unsafe_allow_html=True)
-                for _, row in part_a.iterrows():
-                    trend_class = "trend-up" if row['총수익'] >= 0 else "trend-down"
-                    sign = "+" if row['총수익'] >= 0 else ""
-                    qty_str = "계약 완료" if row['종류'] == 'ELS' and row['보유수량'] == 0 else f"{row['보유수량']:,}주"
-                    st.markdown(f"""
-                    <div class="toss-stock-row">
-                        <div class="stock-left-box">
-                            <span class="stock-main-name">{row['종목명']} <span style='font-size:11px; color:#8B95A1; font-weight:normal;'>| {row['종류']}</span></span>
-                            <span class="stock-sub-qty">{qty_str}</span>
+                if not part_a.empty:
+                    st.markdown("<h4 style='font-size: 16px; color:#CCD2DB; margin-bottom:12px;'>보유 중인 자산</h4>",
+                                unsafe_allow_html=True)
+                    for _, row in part_a.iterrows():
+                        trend_class = "trend-up" if row['총수익'] >= 0 else "trend-down"
+                        sign = "+" if row['총수익'] >= 0 else ""
+                        qty_str = "계약 완료" if row['종류'] == 'ELS' and row['보유수량'] == 0 else f"{row['보유수량']:,}주"
+
+                        st.markdown(f"""
+                        <div class="toss-stock-row">
+                            <div class="stock-left-box">
+                                <span class="stock-main-name">{row['종목명']}</span>
+                                <span class="stock-sub-qty">{qty_str}</span>
+                            </div>
+                            <div class="stock-right-box">
+                                <span class="stock-main-price">{row['평가금액']:,.0f} 원</span>
+                                <span class="stock-sub-qty {trend_class}">{sign}{row['총수익']:,.0f}원 ({sign}{row['수익률']:.2f}%)</span>
+                            </div>
                         </div>
-                        <div class="stock-right-box">
-                            <span class="stock-main-price">{row['평가금액']:,.0f} 원</span>
-                            <span class="stock-sub-qty {trend_class}">{sign}{row['총수익']:,.0f}원 ({sign}{row['수익률']:.2f}%)</span>
+                        """, unsafe_allow_html=True)
+
+                if not part_b.empty:
+                    st.markdown(
+                        "<h4 style='font-size: 16px; color:#8B95A1; margin-top:20px; margin-bottom:12px;'>전량 매도 완료 자산</h4>",
+                        unsafe_allow_html=True)
+                    for _, row in part_b.iterrows():
+                        st.markdown(f"""
+                        <div class="toss-stock-row" style="opacity: 0.5;">
+                            <div class="stock-left-box">
+                                <span class="stock-main-name" style="color: #8B95A1;">{row['종목명']}</span>
+                                <span class="stock-sub-qty">0주 (보유 없음)</span>
+                            </div>
+                            <div class="stock-right-box">
+                                <span class="stock-main-price" style="color: #8B95A1;">0 원</span>
+                            </div>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-else:
-    st.error("❌ 구글 시트에서 '매수일지' 데이터를 불러오지 못했습니다. URL 및 권한을 점검해 주세요.")
+                        """, unsafe_allow_html=True)
