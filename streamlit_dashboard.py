@@ -678,7 +678,7 @@ if df is not None:
                         <div class="toss-stock-row" style="opacity: 0.55;">
                             <div class="stock-left-box">
                                 <span class="stock-main-name">{row['종목명']}</span>
-                                <span class="stock-sub-qty">0주 (매도완료)</span>
+                                <span class="stock-sub-qty">0주</span>
                             </div>
                             <div class="stock-right-box">
                                 <span class="stock-main-price">-</span>
@@ -687,6 +687,6 @@ if df is not None:
                         </div>
                         """, unsafe_allow_html=True)
                 else:
-                    st.caption("최근 매도한 종목이 없습니다.")
+                    st.caption("매도한 종목이 없습니다.")
 else:
     st.error("매수일지 데이터를 로드하지 못했습니다.")
