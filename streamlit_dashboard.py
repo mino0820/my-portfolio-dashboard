@@ -518,28 +518,17 @@ if df is not None:
             # =================================================================
             # 📊 [디버그] 원금대비수익률 데이터 집중 검증 로그
             # =================================================================
+            df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_원금대비수익률)
+
+            # ⚙️ [디버그 로그] 수익률 시트 로드 후 즉시 데이터 검증
             if df_profit_rate_raw is not None:
                 st.sidebar.markdown("### ⚙️ [디버그] 수익률 시트 검증")
                 st.sidebar.write(f"행 개수: {len(df_profit_rate_raw)}개")
                 if not df_profit_rate_raw.empty:
-                    st.sidebar.write("상위 3개 행 원본 샘플:")
-                    st.sidebar.json(df_profit_rate_raw[['일자', '누적입금액', '수익금']].head(3).to_dict(orient='records'))
-
-                    # 전처리 후 값 변화 추적 코드 (복사본으로 시뮬레이션)
-                    df_pr_test = df_profit_rate_raw.copy()
-                    target_numeric_cols = ['누적입금액', '수익금', '입금액 대비 수익률']
-                    for col in target_numeric_cols:
-                        if col in df_pr_test.columns:
-                            if df_pr_test[col].dtype == 'object':
-                                df_pr_test[col] = df_pr_test[col].astype(str).str.replace(',', '').str.replace('%',
-                                                                                                               '').str.strip()
-                            converted = pd.to_numeric(df_pr_test[col], errors='coerce')
-                            nan_cnt = converted.isna().sum()
-                            zero_cnt = (converted == 0).sum()
-                            st.sidebar.write(f"➔ [{col}] NaN변환: {nan_cnt}개 / 0원인 행: {zero_cnt}개")
-            
-            # 원금대비수익률 시각화 그래프
-            df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_원금대비수익률)
+                    st.sidebar.write("원본 3행 샘플 (일자/입금액/수익금):")
+                    # 안전하게 존재하는 컬럼만 추출하여 디버그 출력
+                    chk_cols = [c for c in ['일자', '누적입금액', '수익금'] if c in df_profit_rate_raw.columns]
+                    st.sidebar.json(df_profit_rate_raw[chk_cols].head(3).to_dict(orient='records'))
 
             if df_profit_rate_raw is not None and not df_profit_rate_raw.empty:
                 st.markdown("<hr style='border:1px solid #161B24; margin-top:20px; margin-bottom:25px;'>",
@@ -550,6 +539,11 @@ if df is not None:
 
                 df_pr = df_profit_rate_raw.copy()
 
+                # 공백 찌꺼기 및 유니코드 공백 무조건 청소
+                for col in df_pr.columns:
+                    if df_pr[col].dtype == 'object':
+                        df_pr[col] = df_pr[col].astype(str).str.replace(r'\s+', '', regex=True).str.strip()
+
                 if '일자' in df_pr.columns:
                     df_pr['일자_정제'] = df_pr['일자'].astype(str).str.replace('.', '-', regex=False)
                     df_pr['일자_정제'] = df_pr['일자_정제'].apply(lambda x: x + '-01' if len(x) == 7 else x)
@@ -559,12 +553,20 @@ if df is not None:
                 else:
                     df_pr['x_axis'] = df_pr.index.astype(str)
 
+                # 강력 정규식: 숫자, 마이너스, 소수점을 제외한 모든 문자(쉼표, %, 원, 공백 등) 통째로 제거
                 target_numeric_cols = ['누적입금액', '수익금', '입금액 대비 수익률']
                 for col in target_numeric_cols:
                     if col in df_pr.columns:
-                        if df_pr[col].dtype == 'object':
-                            df_pr[col] = df_pr[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
+                        df_pr[col] = df_pr[col].astype(str).str.replace(r'[^\d\.-]', '', regex=True)
+                        df_pr[col] = df_pr[col].replace('', '0')
                         df_pr[col] = pd.to_numeric(df_pr[col], errors='coerce').fillna(0)
+
+                # ➔ 전처리 후 최종 상태 사이드바 로그 출력
+                for col in target_numeric_cols:
+                    if col in df_pr.columns:
+                        nan_cnt = df_pr[col].isna().sum()
+                        zero_cnt = (df_pr[col] == 0).sum()
+                        st.sidebar.write(f"  ↳ [{col}] 정제 완료 (NaN: {nan_cnt}개 / 0원: {zero_cnt}개)")
 
                 df_pr['누적입금액_백만'] = df_pr['누적입금액'] / 1000000
                 df_pr['수익금_백만'] = df_pr['수익금'] / 1000000
