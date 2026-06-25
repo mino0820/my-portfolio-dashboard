@@ -146,10 +146,21 @@ if st.sidebar.button("🚀 구글 시트에 현재가 저장"):
     st.rerun()
 
 # -----------------------------------------------------------------------------
-# ✨ 토스 스타일 오리지널 카드 디자인 시트 (이미지 기반 100% 동기화 및 모바일 반응형)
+# ✨ [강력한 CSS 수립] 하얀 기본 배경을 강제로 다크 테마로 덮어쓰기
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
+/* 🚨 기본 하얀 배경을 어두운 배경으로 강제 변경 (!important 필수) */
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+    background-color: #0F141C !important;
+    color: #ffffff !important;
+}
+
+/* 사이드바 어두운 배경 처리 */
+[data-testid="stSidebar"] {
+    background-color: #161B24 !important;
+}
+
 /* 반응형 플렉스 상자 컨테이너 */
 .summary-container {
     display: flex;
@@ -249,6 +260,14 @@ st.markdown("""
     font-size: 15px;
     font-weight: 600;
     color: #ffffff;
+}
+
+/* 자산 비중 영역 글자색 보정 */
+.badge-label, .badge-pct {
+    color: #ffffff !important;
+}
+.badge-value {
+    font-weight: 600;
 }
 
 /* 📱 모바일 화면 (768px 이하 디바이스) 해상도 최적화 */
@@ -446,7 +465,7 @@ if df is not None:
 
         col_inv_side, col_eva_side = st.columns(2)
         with col_inv_side:
-            st.markdown("<h3 style='font-size:17px; margin-bottom:10px;'>🪙 자산군별 투자금액 비중</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>🪙 자산군별 투자금액 비중</h3>", unsafe_allow_html=True)
             df_type_inv = active_portfolio.groupby('종류')['총매입가'].sum().reset_index()
             df_type_inv = df_type_inv.sort_values(by='총매입가', ascending=False).reset_index(drop=True)
             df_type_inv['비중'] = (df_type_inv['총매입가'] / total_inv_all) * 100 if total_inv_all > 0 else 0
@@ -456,12 +475,12 @@ if df is not None:
             st.markdown("<div class='weight-container-box'>", unsafe_allow_html=True)
             for _, row in df_type_inv.iterrows():
                 st.markdown(
-                    f"""<div class="weight-inner-item"><span class="badge-label">🔹 {row['종류']}</span><div><div class="badge-pct">{row['비중']:.1f}%</div><div class="badge-value">{row['총매입가']:,.0f}원</div></div></div>""",
+                    f"""<div class="weight-inner-item" style="display:flex; justify-content:space-between; background-color:#1c222e; padding:10px 14px; border-radius:10px; margin-bottom:6px;"><span class="badge-label">🔹 {row['종류']}</span><div><span class="badge-pct" style="margin-right:10px;">{row['비중']:.1f}%</span><span class="badge-value" style="color:#ffffff;">{row['총매입가']:,.0f}원</span></div></div>""",
                     unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
         with col_eva_side:
-            st.markdown("<h3 style='font-size:17px; margin-bottom:10px;'>📈 자산군별 평가금액 비중</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>📈 자산군별 평가금액 비중</h3>", unsafe_allow_html=True)
             df_type_eva = active_portfolio.groupby('종류').agg({'평가금액': 'sum', '총매입가': 'sum'}).reset_index()
             df_type_eva = df_type_eva.sort_values(by='평가금액', ascending=False).reset_index(drop=True)
             df_type_eva['비중'] = (df_type_eva['평가금액'] / total_eva_all) * 100 if total_eva_all > 0 else 0
@@ -474,7 +493,7 @@ if df is not None:
                 p_color = "#F04452" if row['손익'] >= 0 else "#3182F6"
                 sign = "+" if row['손익'] >= 0 else ""
                 st.markdown(
-                    f"""<div class="weight-inner-item"><span class="badge-label">🔹 {row['종류']}</span><div><div class="badge-pct">{row['비중']:.1f}%</div><div class="badge-value" style="color:{p_color} !important;">{sign}{row['손익']:,.0f}원</div></div></div>""",
+                    f"""<div class="weight-inner-item" style="display:flex; justify-content:space-between; background-color:#1c222e; padding:10px 14px; border-radius:10px; margin-bottom:6px;"><span class="badge-label">🔹 {row['종류']}</span><div><span class="badge-pct" style="margin-right:10px;">{row['비중']:.1f}%</span><span class="badge-value" style="color:{p_color};">{sign}{row['손익']:,.0f}원</span></div></div>""",
                     unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
