@@ -146,89 +146,87 @@ if st.sidebar.button("🚀 구글 시트에 현재가 저장"):
     st.rerun()
 
 # -----------------------------------------------------------------------------
-# ✨ [강력한 CSS 수립] 모바일 글자 축소 및 완전한 다크 모드 통합 고정
+# ✨ [CSS 스타일] image_3f3045.png 스타일 완벽 구현 + 모바일 폰트 축소 최적화
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-/* 🚨 모든 UI 요소를 다크 테마 배경으로 완전 강제 고정 */
+/* 기본 앱 배경 완전한 다크 모드로 강제 고정 */
 .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stTabContent"] {
     background-color: #0F141C !important;
     color: #ffffff !important;
 }
 
-/* 사이드바 어두운 배경 처리 */
 [data-testid="stSidebar"] {
     background-color: #161B24 !important;
 }
 
-/* 탭 버튼 스타일 통합 */
-button[data-baseweb="tab"] {
-    color: #8b95a1 !important;
-}
-button[data-baseweb="tab"][aria-selected="true"] {
-    color: #ffffff !important;
-}
+button[data-baseweb="tab"] { color: #8b95a1 !important; }
+button[data-baseweb="tab"][aria-selected="true"] { color: #ffffff !important; }
 
-/* 반응형 플렉스 상자 컨테이너 */
-.summary-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    margin-bottom: 14px;
-    width: 100%;
-}
-
-/* 4열 카드 전용 컨테이너 (상단 4개 항목) */
-.summary-container.four-cols .summary-card {
-    flex: 1 1 calc(25% - 14px);
-}
-
-/* 2열 카드 전용 컨테이너 (하단 배당 및 총손익) */
-.summary-container.two-cols .summary-card {
-    flex: 1 1 calc(50% - 14px);
-}
-
-/* 🎨 대시보드 카드 기본 디자인 (PC 기준) */
-.summary-card {
+/* 💳 이미지 원본 기반의 가로 통합 카드 박스 */
+.toss-triple-container {
     background-color: #1c222e;
-    border-radius: 16px;
-    padding: 22px;
+    border-radius: 18px;
+    padding: 24px 0px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 16px;
     box-sizing: border-box;
-    min-width: 160px;
-    white-space: nowrap; /* 줄바꿈 방지 기본값 */
 }
 
-/* 상단 라벨 스타일 */
-.summary-label {
+/* 내부 3개 구역 분할 및 세로선 제거/유지 설정 */
+.toss-triple-item {
+    flex: 1;
+    text-align: center;
+    position: relative;
+    box-sizing: border-box;
+    padding: 0 10px;
+}
+
+/* 아이템 간의 은은한 가로 절반 구분선 */
+.toss-triple-item:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 15%;
+    height: 70%;
+    width: 1px;
+    background-color: #2a3242;
+}
+
+/* 라벨 스타일 */
+.toss-item-label {
     font-size: 14px;
     color: #8b95a1;
     font-weight: 500;
     margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    display: block;
 }
 
-/* 중앙 주요 수치 폰트 */
-.summary-value {
+/* 주요 금액 수치 */
+.toss-item-value {
     font-size: 24px;
     font-weight: 700;
     color: #ffffff;
+    white-space: nowrap;
 }
 
-/* 하단 서브 수치 폰트 */
-.summary-subval {
-    font-size: 14px;
+/* 하단 퍼센트 수치 */
+.toss-item-sub {
+    font-size: 13px;
     margin-top: 6px;
     font-weight: 600;
+    display: block;
 }
 
-/* 🎨 토스 오리지널 트렌드 컬러 클래스 */
+/* 트렌드 색상 */
 .trend-up { color: #f04452 !important; }
 .trend-down { color: #3182f6 !important; }
 .dividend-highlight { color: #00d4b2 !important; }
 
-/* 보유/매도 주식 행 디자인 */
+/* 보유 종목 리스트 스타일 */
 .toss-stock-row {
     display: flex;
     justify-content: space-between;
@@ -238,19 +236,8 @@ button[data-baseweb="tab"][aria-selected="true"] {
     border-radius: 14px;
     margin-bottom: 8px;
 }
-.stock-left-box {
-    display: flex;
-    flex-direction: column;
-}
-.stock-main-name {
-    font-size: 15px;
-    font-weight: 600;
-    color: #ffffff;
-    display: flex;
-    align-items: center;
-}
-
-/* 🔵 계좌명 배지 색상 오리지널 파란색/네이비 톤 고정 */
+.stock-left-box { display: flex; flex-direction: column; }
+.stock-main-name { font-size: 15px; font-weight: 600; color: #ffffff; display: flex; align-items: center; }
 .account-badge {
     background-color: #1a2c4e !important;
     color: #4b96ff !important;
@@ -261,59 +248,32 @@ button[data-baseweb="tab"][aria-selected="true"] {
     margin-right: 8px;
     line-height: 1;
 }
+.stock-sub-qty { font-size: 12px; color: #8b95a1; margin-top: 4px; }
+.stock-right-box { display: flex; flex-direction: column; align-items: flex-end; }
+.stock-main-price { font-size: 15px; font-weight: 600; color: #ffffff; }
 
-.stock-sub-qty {
-    font-size: 12px;
-    color: #8b95a1;
-    margin-top: 4px;
-}
-.stock-right-box {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-}
-.stock-main-price {
-    font-size: 15px;
-    font-weight: 600;
-    color: #ffffff;
-}
+.badge-label, .badge-pct { color: #ffffff !important; }
+.badge-value { font-weight: 600; }
 
-/* 자산 비중 영역 글자색 보정 */
-.badge-label, .badge-pct {
-    color: #ffffff !important;
-}
-.badge-value {
-    font-weight: 600;
-}
-
-/* 📱 [핵심 수정] 모바일 화면 (768px 이하 해상도) 스마트 폰트 축소 시스템 */
+/* 📱 [모바일 대응 완벽 구축] 해상도가 낮아지면 한 줄 레이아웃을 지키기 위해 글씨 크기를 자동 대폭 축소 */
 @media (max-width: 768px) {
-    .summary-container.four-cols .summary-card {
-        flex: 1 1 calc(50% - 14px); /* 4열 카드가 2줄 x 2열로 배치 */
-        padding: 14px;
+    .toss-triple-container {
+        padding: 16px 0px;
+        margin-bottom: 12px;
     }
-    .summary-container.two-cols .summary-card {
-        flex: 1 1 100%; /* 배당/총손익 카드는 꽉 차게 1줄 배치 */
-        padding: 14px;
-    }
-
-    /* 🚨 '원'이 다음 줄로 밀리지 않도록 가독성 중심 글자 크기 축소 */
-    .summary-value {
-        font-size: 17px !important; 
-    }
-    .summary-label {
-        font-size: 12px !important;
+    .toss-item-label {
+        font-size: 11px !important;
         margin-bottom: 6px;
     }
-    .summary-subval {
-        font-size: 12px !important;
+    .toss-item-value {
+        font-size: 15px !important; /* 모바일에서 금액이 밀리지 않고 완벽하게 한 줄에 들어오도록 설계 */
     }
-    .toss-stock-row {
-        padding: 12px 14px;
+    .toss-item-sub {
+        font-size: 10px !important;
+        margin-top: 3px;
     }
-    .stock-main-name, .stock-main-price {
-        font-size: 14px !important;
-    }
+    .toss-stock-row { padding: 12px 14px; }
+    .stock-main-name, .stock-main-price { font-size: 14px !important; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -449,55 +409,54 @@ if df is not None:
         net_profit_all = total_profit_all + dividend_profit_all
         net_rate_all = (net_profit_all / total_deposit_all * 100) if total_deposit_all > 0 else 0
 
-        # 요약 4열 카드 구조
+        # 요약 상단 3분할 박스 (투자금액 | 평가금액 | 평가손익)
         trend_class = "trend-up" if total_profit_all >= 0 else "trend-down"
         sign = "+" if total_profit_all >= 0 else ""
 
         st.markdown(f"""
-        <div class="summary-container four-cols">
-            <div class="summary-card">
-                <span class="summary-label">💳 총 투자금액</span>
-                <div class="summary-value">{total_inv_all:,.0f}원</div>
+        <div class="toss-triple-container">
+            <div class="toss-triple-item">
+                <span class="toss-item-label">총 투자금액</span>
+                <span class="toss-item-value">{total_inv_all:,.0f}원</span>
             </div>
-            <div class="summary-card">
-                <span class="summary-label">💳 총 평가금액</span>
-                <div class="summary-value">{total_eva_all:,.0f}원</div>
+            <div class="toss-triple-item">
+                <span class="toss-item-label">총 평가금액</span>
+                <span class="toss-item-value">{total_eva_all:,.0f}원</span>
             </div>
-            <div class="summary-card">
-                <span class="summary-label">📈 총 평가손익</span>
-                <div class="summary-value {trend_class}">{sign}{total_profit_all:,.0f}원</div>
-                <div class="summary-subval {trend_class}">({sign}{total_rate_all:.2f}%)</div>
-            </div>
-            <div class="summary-card">
-                <span class="summary-label">💰 총 입금액</span>
-                <div class="summary-value">{total_deposit_all:,.0f}원</div>
+            <div class="toss-triple-item">
+                <span class="toss-item-label">총 평가손익</span>
+                <span class="toss-item-value {trend_class}">{sign}{total_profit_all:,.0f}원</span>
+                <span class="toss-item-sub {trend_class}">({sign}{total_rate_all:.2f}%)</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # 요약 2열 카드 구조
+        # 요약 하단 3분할 박스 (총 입금액 | 배당수익 | 총 손익)
         net_trend_class = "trend-up" if net_profit_all >= 0 else "trend-down"
         net_sign = "+" if net_profit_all >= 0 else ""
 
         st.markdown(f"""
-        <div class="summary-container two-cols">
-            <div class="summary-card">
-                <span class="summary-label">🪙 배당 및 이자수익</span>
-                <div class="summary-value dividend-highlight">+{dividend_profit_all:,.0f}원</div>
-                <div class="summary-subval dividend-highlight">({dividend_rate_all:.2f}%)</div>
+        <div class="toss-triple-container">
+            <div class="toss-triple-item">
+                <span class="toss-item-label">총 입금액</span>
+                <span class="toss-item-value">{total_deposit_all:,.0f}원</span>
             </div>
-            <div class="summary-card">
-                <span class="summary-label">🏆 배당 포함 총 손익</span>
-                <div class="summary-value {net_trend_class}">{net_sign}{net_profit_all:,.0f}원</div>
-                <div class="summary-subval {net_trend_class}">({net_sign}{net_rate_all:.2f}%)</div>
+            <div class="toss-triple-item">
+                <span class="toss-item-label">배당수익</span>
+                <span class="toss-item-value dividend-highlight">+{dividend_profit_all:,.0f}원</span>
+                <span class="toss-item-sub dividend-highlight">({dividend_rate_all:.2f}%)</span>
+            </div>
+            <div class="toss-triple-item">
+                <span class="toss-item-label">총 손익</span>
+                <span class="toss-item-value {net_trend_class}">{net_sign}{net_profit_all:,.0f}원</span>
+                <span class="toss-item-sub {net_trend_class}">({net_sign}{net_rate_all:.2f}%)</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
         col_inv_side, col_eva_side = st.columns(2)
         with col_inv_side:
-            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>🪙 자산군별 투자금액 비중</h3>",
-                        unsafe_allow_html=True)
+            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>🪙 자산군별 투자금액 비중</h3>", unsafe_allow_html=True)
             df_type_inv = active_portfolio.groupby('종류')['총매입가'].sum().reset_index()
             df_type_inv = df_type_inv.sort_values(by='총매입가', ascending=False).reset_index(drop=True)
             df_type_inv['비중'] = (df_type_inv['총매입가'] / total_inv_all) * 100 if total_inv_all > 0 else 0
@@ -512,8 +471,7 @@ if df is not None:
             st.markdown("</div>", unsafe_allow_html=True)
 
         with col_eva_side:
-            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>📈 자산군별 평가금액 비중</h3>",
-                        unsafe_allow_html=True)
+            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>📈 자산군별 평가금액 비중</h3>", unsafe_allow_html=True)
             df_type_eva = active_portfolio.groupby('종류').agg({'평가금액': 'sum', '총매입가': 'sum'}).reset_index()
             df_type_eva = df_type_eva.sort_values(by='평가금액', ascending=False).reset_index(drop=True)
             df_type_eva['비중'] = (df_type_eva['평가금액'] / total_eva_all) * 100 if total_eva_all > 0 else 0
@@ -666,8 +624,6 @@ if df is not None:
                 fig_growth.add_trace(
                     go.Bar(x=df_pr['x_axis'], y=df_pr['수익금_백만'], name='수익금', marker_color='#3182F6', opacity=0.9,
                            yaxis='y1', hovertemplate='%{y:,.1f}백만 원'))
-
-                # 📈 [수정 반영] 모바일이나 압축 상황에서 그래프 텍스트 레이블이 겹치지 않도록 세부 조절
                 fig_growth.add_trace(go.Scatter(
                     x=df_pr['x_axis'], y=df_pr['입금액 대비 수익률'], name='입금액 대비 수익률', mode='lines+markers+text',
                     line=dict(color='#F04452', width=2.5), marker=dict(size=5, color='#F04452'),
@@ -715,36 +671,41 @@ if df is not None:
             acc_net_trend = "trend-up" if acc_net_profit >= 0 else "trend-down"
             acc_net_sign = "+" if acc_net_profit >= 0 else ""
 
+            # 개별 계좌 상단 3분할 통합 박스
             st.markdown(f"""
-            <div class="summary-container four-cols">
-                <div class="summary-card">
-                    <span class="summary-label">💳 투자금액</span>
-                    <div class="summary-value">{acc_investment:,.0f}원</div>
+            <div class="toss-triple-container">
+                <div class="toss-triple-item">
+                    <span class="toss-item-label">투자금액</span>
+                    <span class="toss-item-value">{acc_investment:,.0f}원</span>
                 </div>
-                <div class="summary-card">
-                    <span class="summary-label">💳 평가금액</span>
-                    <div class="summary-value">{acc_evaluation:,.0f}원</div>
+                <div class="toss-triple-item">
+                    <span class="toss-item-label">평가금액</span>
+                    <span class="toss-item-value">{acc_evaluation:,.0f}원</span>
                 </div>
-                <div class="summary-card">
-                    <span class="summary-label">📈 평가손익</span>
-                    <div class="summary-value {acc_trend}">{acc_sign}{acc_profit:,.0f}원</div>
-                    <div class="summary-subval {acc_trend}">({acc_sign}{acc_rate:.2f}%)</div>
-                </div>
-                <div class="summary-card">
-                    <span class="summary-label">💰 입금액</span>
-                    <div class="summary-value">{acc_deposit:,.0f}원</div>
+                <div class="toss-triple-item">
+                    <span class="toss-item-label">평가손익</span>
+                    <span class="toss-item-value {acc_trend}">{acc_sign}{acc_profit:,.0f}원</span>
+                    <span class="toss-item-sub {acc_trend}">({acc_sign}{acc_rate:.2f}%)</span>
                 </div>
             </div>
-            <div class="summary-container two-cols">
-                <div class="summary-card">
-                    <span class="summary-label">🪙 배당수익</span>
-                    <div class="summary-value dividend-highlight">+{acc_dividend:,.0f}원</div>
-                    <div class="summary-subval dividend-highlight">({acc_dividend_rate:.2f}%)</div>
+            """, unsafe_allow_html=True)
+
+            # 개별 계좌 하단 3분할 통합 박스
+            st.markdown(f"""
+            <div class="toss-triple-container">
+                <div class="toss-triple-item">
+                    <span class="toss-item-label">입금액</span>
+                    <span class="toss-item-value">{acc_deposit:,.0f}원</span>
                 </div>
-                <div class="summary-card">
-                    <span class="summary-label">🏆 총 손익</span>
-                    <div class="summary-value {acc_net_trend}">{acc_net_sign}{acc_net_profit:,.0f}원</div>
-                    <div class="summary-subval {acc_net_trend}">({acc_net_sign}{acc_net_rate:.2f}%)</div>
+                <div class="toss-triple-item">
+                    <span class="toss-item-label">배당수익</span>
+                    <span class="toss-item-value dividend-highlight">+{acc_dividend:,.0f}원</span>
+                    <span class="toss-item-sub dividend-highlight">({acc_dividend_rate:.2f}%)</span>
+                </div>
+                <div class="toss-triple-item">
+                    <span class="toss-item-label">총 손익</span>
+                    <span class="toss-item-value {acc_net_trend}">{acc_net_sign}{acc_net_profit:,.0f}원</span>
+                    <span class="toss-item-sub {acc_net_trend}">({acc_net_sign}{acc_net_rate:.2f}%)</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
