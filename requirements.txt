@@ -2,3 +2,4 @@ streamlit
 gspread
 finance-datareader
 pandas
+google-auth
