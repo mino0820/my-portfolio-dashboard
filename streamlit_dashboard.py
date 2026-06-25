@@ -122,10 +122,9 @@ def update_google_sheet_prices():
 def load_sheet_by_gid(base_url, gid):
     try:
         sheet_id = get_spreadsheet_id(GOOGLE_SHEET_URL)
-        sh = gc.open_by_key(sheet_id)
+        sh = gc.open_by_key(sheet_id)  # 이미 성공한 인증 객체(gc)로 시트 열기
 
-        # 💡 [개선] URL 다운로드 방식 대신 gspread 객체 활용
-        # 전역으로 생성한 gc 인증을 사용해 gid에 해당하는 워크시트를 직접 찾습니다.
+        # GID 값과 일치하는 워크시트 탭 찾기
         worksheet = None
         for ws in sh.worksheets():
             if str(ws.id) == str(gid):
@@ -133,29 +132,24 @@ def load_sheet_by_gid(base_url, gid):
                 break
 
         if worksheet is None:
-            st.sidebar.error(f"❌ GID [{gid}]에 해당하는 탭을 시트에서 찾을 수 없습니다.")
             return None
 
-        # 데이터를 가져와 데이터프레임으로 변환
+        # 데이터를 안전하게 리스트로 가져와 데이터프레임화
         all_values = worksheet.get_all_values()
         if not all_values:
             return pd.DataFrame()
 
-        # 첫 줄을 컬럼명으로 지정
         df = pd.DataFrame(all_values[1:], columns=all_values[0])
-
-        # 앞뒤 공백 제거 및 Unnamed 열 제거 전처리
         df.columns = df.columns.str.strip()
         df = df[[c for c in df.columns if c and not c.startswith('Unnamed:')]]
 
-        # 데이터 내부의 각 셀 공백 제거
+        # 데이터 내 공백 정제
         for col in df.columns:
             df[col] = df[col].astype(str).str.strip()
 
         return df
-
     except Exception as e:
-        st.sidebar.error(f"❌ 구글 시트(GID: {gid}) 로드 중 치명적 오류: {e}")
+        st.sidebar.error(f"❌ 데이터 읽기 실패 (GID {gid}): {e}")
         return None
 
 # -----------------------------------------------------------------------------
