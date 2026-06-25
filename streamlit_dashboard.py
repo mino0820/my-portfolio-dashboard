@@ -520,16 +520,6 @@ if df is not None:
             # =================================================================
             df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_원금대비수익률)
 
-            # ⚙️ [디버그 로그] 수익률 시트 로드 후 즉시 데이터 검증
-            if df_profit_rate_raw is not None:
-                st.sidebar.markdown("### ⚙️ [디버그] 수익률 시트 검증")
-                st.sidebar.write(f"행 개수: {len(df_profit_rate_raw)}개")
-                if not df_profit_rate_raw.empty:
-                    st.sidebar.write("원본 3행 샘플 (일자/입금액/수익금):")
-                    # 안전하게 존재하는 컬럼만 추출하여 디버그 출력
-                    chk_cols = [c for c in ['일자', '누적입금액', '수익금'] if c in df_profit_rate_raw.columns]
-                    st.sidebar.json(df_profit_rate_raw[chk_cols].head(3).to_dict(orient='records'))
-
             if df_profit_rate_raw is not None and not df_profit_rate_raw.empty:
                 st.markdown("<hr style='border:1px solid #161B24; margin-top:20px; margin-bottom:25px;'>",
                             unsafe_allow_html=True)
