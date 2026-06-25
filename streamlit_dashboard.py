@@ -551,12 +551,12 @@ if df is not None:
                         df_pr[col] = df_pr[col].replace('', '0')
                         df_pr[col] = pd.to_numeric(df_pr[col], errors='coerce').fillna(0)
 
-                # ➔ 전처리 후 최종 상태 사이드바 로그 출력
-                for col in target_numeric_cols:
-                    if col in df_pr.columns:
-                        nan_cnt = df_pr[col].isna().sum()
-                        zero_cnt = (df_pr[col] == 0).sum()
-                        st.sidebar.write(f"  ↳ [{col}] 정제 완료 (NaN: {nan_cnt}개 / 0원: {zero_cnt}개)")
+                # # ➔ 전처리 후 최종 상태 사이드바 로그 출력
+                # for col in target_numeric_cols:
+                #     if col in df_pr.columns:
+                #         nan_cnt = df_pr[col].isna().sum()
+                #         zero_cnt = (df_pr[col] == 0).sum()
+                #         st.sidebar.write(f"  ↳ [{col}] 정제 완료 (NaN: {nan_cnt}개 / 0원: {zero_cnt}개)")
 
                 df_pr['누적입금액_백만'] = df_pr['누적입금액'] / 1000000
                 df_pr['수익금_백만'] = df_pr['수익금'] / 1000000
