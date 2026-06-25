@@ -120,11 +120,6 @@ def load_sheet_by_gid(base_url, gid):
         df_load.columns = df_load.columns.str.strip()
         df_load = df_load[[c for c in df_load.columns if not c.startswith('Unnamed:')]]
 
-        st.sidebar.write(f"📊 [디버그] GID {gid} 로드 완료 - 행 개수: {len(df_load)}개")
-        if not df_load.empty:
-            st.sidebar.write(f"   ↳ 컬럼 목록: {list(df_load.columns)}")
-            st.sidebar.caption(f"   ↳ 첫 행 데이터 샘플: {df_load.iloc[0].to_dict()}")
-
         return df_load
     except Exception as e:
         st.sidebar.error(f"❌ GID {gid} 로드 중 에러 발생: {e}")
@@ -520,6 +515,29 @@ if df is not None:
             )
             st.plotly_chart(fig, use_container_width=True)
 
+            # =================================================================
+            # 📊 [디버그] 원금대비수익률 데이터 집중 검증 로그
+            # =================================================================
+            if df_profit_rate_raw is not None:
+                st.sidebar.markdown("### ⚙️ [디버그] 수익률 시트 검증")
+                st.sidebar.write(f"행 개수: {len(df_profit_rate_raw)}개")
+                if not df_profit_rate_raw.empty:
+                    st.sidebar.write("상위 3개 행 원본 샘플:")
+                    st.sidebar.json(df_profit_rate_raw[['일자', '누적입금액', '수익금']].head(3).to_dict(orient='records'))
+
+                    # 전처리 후 값 변화 추적 코드 (복사본으로 시뮬레이션)
+                    df_pr_test = df_profit_rate_raw.copy()
+                    target_numeric_cols = ['누적입금액', '수익금', '입금액 대비 수익률']
+                    for col in target_numeric_cols:
+                        if col in df_pr_test.columns:
+                            if df_pr_test[col].dtype == 'object':
+                                df_pr_test[col] = df_pr_test[col].astype(str).str.replace(',', '').str.replace('%',
+                                                                                                               '').str.strip()
+                            converted = pd.to_numeric(df_pr_test[col], errors='coerce')
+                            nan_cnt = converted.isna().sum()
+                            zero_cnt = (converted == 0).sum()
+                            st.sidebar.write(f"➔ [{col}] NaN변환: {nan_cnt}개 / 0원인 행: {zero_cnt}개")
+            
             # 원금대비수익률 시각화 그래프
             df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_원금대비수익률)
 
