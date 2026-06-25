@@ -1,4 +1,4 @@
 streamlit
+gspread
+finance-datareader
 pandas
-numpy
-plotly
