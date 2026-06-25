@@ -227,7 +227,7 @@ st.markdown("""
 
 
 # -----------------------------------------------------------------------------
-# 3. 비즈니스 로직 및 전처리 실행 (버그 해결)
+# 3. 비즈니스 로직 및 전처리 실행
 # -----------------------------------------------------------------------------
 def categorize_kind(k):
     k_str = str(k).upper()
@@ -516,7 +516,7 @@ if df is not None:
             st.plotly_chart(fig, use_container_width=True)
 
             # =================================================================
-            # 📊 [디버그] 원금대비수익률 데이터 집중 검증 로그
+            # 📊 원금대비수익률 데이터
             # =================================================================
             df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_원금대비수익률)
 
@@ -550,13 +550,6 @@ if df is not None:
                         df_pr[col] = df_pr[col].astype(str).str.replace(r'[^\d\.-]', '', regex=True)
                         df_pr[col] = df_pr[col].replace('', '0')
                         df_pr[col] = pd.to_numeric(df_pr[col], errors='coerce').fillna(0)
-
-                # # ➔ 전처리 후 최종 상태 사이드바 로그 출력
-                # for col in target_numeric_cols:
-                #     if col in df_pr.columns:
-                #         nan_cnt = df_pr[col].isna().sum()
-                #         zero_cnt = (df_pr[col] == 0).sum()
-                #         st.sidebar.write(f"  ↳ [{col}] 정제 완료 (NaN: {nan_cnt}개 / 0원: {zero_cnt}개)")
 
                 df_pr['누적입금액_백만'] = df_pr['누적입금액'] / 1000000
                 df_pr['수익금_백만'] = df_pr['수익금'] / 1000000
@@ -639,28 +632,61 @@ if df is not None:
             </div>
             """, unsafe_allow_html=True)
 
-            # 계좌별 보유 종목 목록 출력
-            if not part_a.empty:
+            # 📊 좌우 레이아웃 분할 (보유 종목 | 매도 종목)
+            col_left, col_right = st.columns(2)
+
+            # ==========================================
+            # 🟢 LEFT: 계좌별 보유 종목 목록 출력
+            # ==========================================
+            with col_left:
                 st.markdown("<h4 style='font-size: 15px; color:#FFFFFF; margin-bottom:10px;'>🔍 보유 종목</h4>",
                             unsafe_allow_html=True)
-                for _, row in part_a.iterrows():
-                    trend_class = "trend-up" if row['총수익'] >= 0 else "trend-down"
-                    sign = "+" if row['총수익'] >= 0 else ""
-                    qty_str = "계약 완료" if row['종류'] == 'ELS' and row['보유수량'] == 0 else f"{row['보유수량']:,}주"
+                if not part_a.empty:
+                    for _, row in part_a.iterrows():
+                        trend_class = "trend-up" if row['총수익'] >= 0 else "trend-down"
+                        sign = "+" if row['총수익'] >= 0 else ""
+                        qty_str = "계약 완료" if row['종류'] == 'ELS' and row['보유수량'] == 0 else f"{row['보유수량']:,}주"
 
-                    st.markdown(f"""
-                    <div class="toss-stock-row">
-                        <div class="stock-left-box">
-                            <span class="stock-main-name">{row['종목명']}</span>
-                            <span class="stock-sub-qty">{qty_str}</span>
+                        st.markdown(f"""
+                        <div class="toss-stock-row">
+                            <div class="stock-left-box">
+                                <span class="stock-main-name">{row['종목명']}</span>
+                                <span class="stock-sub-qty">{qty_str}</span>
+                            </div>
+                            <div class="stock-right-box">
+                                <span class="stock-main-price">{row['평가금액']:,.0f} 원</span>
+                                <span class="stock-sub-qty {trend_class}">{sign}{row['총수익']:,.0f}원 ({sign}{row['수익률']:.2f}%)</span>
+                            </div>
                         </div>
-                        <div class="stock-right-box">
-                            <span class="stock-main-price">{row['평가금액']:,.0f} 원</span>
-                            <span class="stock-sub-qty {trend_class}">{sign}{row['총수익']:,.0f}원 ({sign}{row['수익률']:.2f}%)</span>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.caption("현재 보유 중인 종목이 없습니다.")
+
+            # ==========================================
+            # 🔴 RIGHT: 계좌별 매도 종목 목록 출력
+            # ==========================================
+            with col_right:
+                st.markdown("<h4 style='font-size: 15px; color:#CCD2DB; margin-bottom:10px;'>📉 매도 종목</h4>",
+                            unsafe_allow_html=True)
+                if not part_b.empty:
+                    for _, row in part_b.iterrows():
+                        trend_class = "trend-up" if row['총수익'] >= 0 else "trend-down"
+                        sign = "+" if row['총수익'] >= 0 else ""
+
+                        # 매도 종목은 이미 정리된 종목이므로 반투명 처리(opacity: 0.55) 및 평가금액 '-' 처리
+                        st.markdown(f"""
+                        <div class="toss-stock-row" style="opacity: 0.55;">
+                            <div class="stock-left-box">
+                                <span class="stock-main-name">{row['종목명']}</span>
+                                <span class="stock-sub-qty">0주 (매도완료)</span>
+                            </div>
+                            <div class="stock-right-box">
+                                <span class="stock-main-price">-</span>
+                                <span class="stock-sub-qty {trend_class}">{sign}{row['총수익']:,.0f}원</span>
+                            </div>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.caption("현재 보유 중인 종목이 없습니다.")
+                        """, unsafe_allow_html=True)
+                else:
+                    st.caption("최근 매도한 종목이 없습니다.")
 else:
     st.error("매수일지 데이터를 로드하지 못했습니다.")
