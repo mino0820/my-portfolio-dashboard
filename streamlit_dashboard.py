@@ -146,12 +146,12 @@ if st.sidebar.button("🚀 구글 시트에 현재가 저장"):
     st.rerun()
 
 # -----------------------------------------------------------------------------
-# ✨ [강력한 CSS 수립] 오리지널 색상 동기화 및 다크 테마 고정
+# ✨ [강력한 CSS 수립] 모바일 글자 축소 및 완전한 다크 모드 통합 고정
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-/* 기본 하얀 배경을 어두운 배경으로 강제 변경 */
-.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+/* 🚨 모든 UI 요소를 다크 테마 배경으로 완전 강제 고정 */
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stTabContent"] {
     background-color: #0F141C !important;
     color: #ffffff !important;
 }
@@ -161,32 +161,41 @@ st.markdown("""
     background-color: #161B24 !important;
 }
 
+/* 탭 버튼 스타일 통합 */
+button[data-baseweb="tab"] {
+    color: #8b95a1 !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #ffffff !important;
+}
+
 /* 반응형 플렉스 상자 컨테이너 */
 .summary-container {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 16px;
+    gap: 14px;
+    margin-bottom: 14px;
     width: 100%;
 }
 
 /* 4열 카드 전용 컨테이너 (상단 4개 항목) */
 .summary-container.four-cols .summary-card {
-    flex: 1 1 calc(25% - 16px);
+    flex: 1 1 calc(25% - 14px);
 }
 
 /* 2열 카드 전용 컨테이너 (하단 배당 및 총손익) */
 .summary-container.two-cols .summary-card {
-    flex: 1 1 calc(50% - 16px);
+    flex: 1 1 calc(50% - 14px);
 }
 
-/* 🎨 이미지 원본 카드 스타일 완벽 복원 (짙은 남색 계열 카드) */
+/* 🎨 대시보드 카드 기본 디자인 (PC 기준) */
 .summary-card {
     background-color: #1c222e;
     border-radius: 16px;
-    padding: 24px;
+    padding: 22px;
     box-sizing: border-box;
-    min-width: 180px;
+    min-width: 160px;
+    white-space: nowrap; /* 줄바꿈 방지 기본값 */
 }
 
 /* 상단 라벨 스타일 */
@@ -194,7 +203,7 @@ st.markdown("""
     font-size: 14px;
     color: #8b95a1;
     font-weight: 500;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -241,7 +250,7 @@ st.markdown("""
     align-items: center;
 }
 
-/* 🔵 [수정 반영] 계좌명 배지 색상을 기존 회색에서 원본의 파란색/네이비 톤으로 복원 */
+/* 🔵 계좌명 배지 색상 오리지널 파란색/네이비 톤 고정 */
 .account-badge {
     background-color: #1a2c4e !important;
     color: #4b96ff !important;
@@ -277,18 +286,33 @@ st.markdown("""
     font-weight: 600;
 }
 
-/* 📱 모바일 화면 (768px 이하 디바이스) 해상도 최적화 */
+/* 📱 [핵심 수정] 모바일 화면 (768px 이하 해상도) 스마트 폰트 축소 시스템 */
 @media (max-width: 768px) {
     .summary-container.four-cols .summary-card {
-        flex: 1 1 calc(50% - 16px);
-        padding: 18px;
+        flex: 1 1 calc(50% - 14px); /* 4열 카드가 2줄 x 2열로 배치 */
+        padding: 14px;
     }
     .summary-container.two-cols .summary-card {
-        flex: 1 1 100%;
-        padding: 18px;
+        flex: 1 1 100%; /* 배당/총손익 카드는 꽉 차게 1줄 배치 */
+        padding: 14px;
     }
+
+    /* 🚨 '원'이 다음 줄로 밀리지 않도록 가독성 중심 글자 크기 축소 */
     .summary-value {
-        font-size: 19px;
+        font-size: 17px !important; 
+    }
+    .summary-label {
+        font-size: 12px !important;
+        margin-bottom: 6px;
+    }
+    .summary-subval {
+        font-size: 12px !important;
+    }
+    .toss-stock-row {
+        padding: 12px 14px;
+    }
+    .stock-main-name, .stock-main-price {
+        font-size: 14px !important;
     }
 }
 </style>
@@ -472,7 +496,8 @@ if df is not None:
 
         col_inv_side, col_eva_side = st.columns(2)
         with col_inv_side:
-            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>🪙 자산군별 투자금액 비중</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>🪙 자산군별 투자금액 비중</h3>",
+                        unsafe_allow_html=True)
             df_type_inv = active_portfolio.groupby('종류')['총매입가'].sum().reset_index()
             df_type_inv = df_type_inv.sort_values(by='총매입가', ascending=False).reset_index(drop=True)
             df_type_inv['비중'] = (df_type_inv['총매입가'] / total_inv_all) * 100 if total_inv_all > 0 else 0
@@ -487,7 +512,8 @@ if df is not None:
             st.markdown("</div>", unsafe_allow_html=True)
 
         with col_eva_side:
-            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>📈 자산군별 평가금액 비중</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 style='font-size:17px; margin-bottom:10px; color:#ffffff;'>📈 자산군별 평가금액 비중</h3>",
+                        unsafe_allow_html=True)
             df_type_eva = active_portfolio.groupby('종류').agg({'평가금액': 'sum', '총매입가': 'sum'}).reset_index()
             df_type_eva = df_type_eva.sort_values(by='평가금액', ascending=False).reset_index(drop=True)
             df_type_eva['비중'] = (df_type_eva['평가금액'] / total_eva_all) * 100 if total_eva_all > 0 else 0
@@ -581,7 +607,7 @@ if df is not None:
                 go.Scatter(
                     x=df_total['표시'], y=df_total['실수령금'], mode='text',
                     text=df_total['실수령금'].apply(lambda x: f"{x:,.0f}"),
-                    textposition='top center', textfont=dict(color='#8B95A1', size=12, family='Pretendard'),
+                    textposition='top center', textfont=dict(color='#8B95A1', size=11, family='Pretendard'),
                     showlegend=False
                 )
             )
@@ -640,11 +666,13 @@ if df is not None:
                 fig_growth.add_trace(
                     go.Bar(x=df_pr['x_axis'], y=df_pr['수익금_백만'], name='수익금', marker_color='#3182F6', opacity=0.9,
                            yaxis='y1', hovertemplate='%{y:,.1f}백만 원'))
+
+                # 📈 [수정 반영] 모바일이나 압축 상황에서 그래프 텍스트 레이블이 겹치지 않도록 세부 조절
                 fig_growth.add_trace(go.Scatter(
                     x=df_pr['x_axis'], y=df_pr['입금액 대비 수익률'], name='입금액 대비 수익률', mode='lines+markers+text',
-                    line=dict(color='#F04452', width=3), marker=dict(size=6, color='#F04452'),
+                    line=dict(color='#F04452', width=2.5), marker=dict(size=5, color='#F04452'),
                     text=df_pr['입금액 대비 수익률'].apply(lambda x: f"{x:.1f}%" if x != 0 else ""),
-                    textposition='top center', textfont=dict(color='#FFFFFF', size=10, family='Pretendard'), yaxis='y2',
+                    textposition='top center', textfont=dict(color='#FFFFFF', size=9, family='Pretendard'), yaxis='y2',
                     hovertemplate='%{y:.2f}%'
                 ))
 
@@ -652,7 +680,7 @@ if df is not None:
                     paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                     font=dict(color='#FFFFFF', family='Pretendard'),
                     barmode='stack', hovermode='x unified', showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=11)),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
                     xaxis=dict(title='', gridcolor='#161B24', showgrid=False, tickangle=-45, type='category'),
                     yaxis=dict(title='금액 (백만 원)', gridcolor='#161B24', showgrid=True, side='left', tickformat=',.0f'),
                     yaxis2=dict(title='수익률 (%)', side='right', overlaying='y', showgrid=False, ticksuffix='%'),
