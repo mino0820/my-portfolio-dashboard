@@ -6,7 +6,6 @@ import re
 import plotly.express as px
 import plotly.graph_objects as go
 import gspread
-import yfinance as yf
 import time
 import time
 import gspread
