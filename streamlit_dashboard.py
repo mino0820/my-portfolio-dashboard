@@ -1,4 +1,3 @@
-import FinanceDataReader as fdr  # 코드 맨 상단에 추가해 주세요!
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,11 +6,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 import gspread
 import time
-import time
-import gspread
+import FinanceDataReader as fdr
 from google.oauth2.service_account import Credentials
 
-# Page configuration
+# -----------------------------------------------------------------------------
+# 0. Page configuration
+# -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="마이 포트폴리오",
     layout="wide",
@@ -19,27 +19,37 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
-# 구글 시트 ID 및 GID 설정 (secrets 미설정 시 폴백 주소 사용)
+# 1. 🔒 [보안 및 설정 로드] Streamlit secrets에서 정보 통합 로드
 # -----------------------------------------------------------------------------
-# 🔒 [보안 및 설정 로드] Streamlit secrets에서 URL과 Grid ID들을 안전하게 가져옵니다.
 try:
-    # 1. 구글 시트 주소 로드
+    # 구글 시트 주소 로드
     GOOGLE_SHEET_URL = st.secrets["google_sheet"]["url"]
 
-    # 2. 각 시트 탭(Grid ID) 고유 번호 로드
-    GRID_매수일지 = st.secrets["grid_ids"]["매수일지"]
-    GRID_연도별수익 = st.secrets["grid_ids"]["연도별수익"]
-    GRID_입금액 = st.secrets["grid_ids"]["입금액"]
-    GRID_원금대비수익률 = st.secrets["grid_ids"]["원금대비수익률"]
-    GRID_종가 = st.secrets["grid_ids"]["종가"]
+    # 각 시트 탭(Grid ID) 고유 번호 로드 (통합 규격 반영)
+    GRID_매수일지 = st.secrets["google_sheet"]["gid_buy_log"]
+    GRID_연도별수익 = st.secrets["google_sheet"]["gid_yearly_profit"]
+    GRID_입금액 = st.secrets["google_sheet"]["gid_deposit"]
+    GRID_원금대비수익률 = st.secrets["google_sheet"]["gid_profit_rate"]
+    GRID_종가 = st.secrets["google_sheet"]["gid_closing_price"]
 
 except Exception as e:
     st.error(f"🔒 보안 설정(Secrets) 로드 실패: {e}")
     st.info("💡 배포 환경의 Advanced Settings -> Secrets 칸에 설정이 올바르게 입력되었는지 확인해 주세요.")
-    st.stop()  # 설정이 없으면 코드 실행을 안전하게 강제 중단합니다.
+    st.stop()
+
+# -----------------------------------------------------------------------------
+# 2. 🔑 [보안 강화 전역 인증] 프로그램 시작 시 구글 API 권한을 획득합니다 (버그 해결)
+# -----------------------------------------------------------------------------
+try:
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    gc = gspread.authorize(credentials)  # 전역 변수 gc 생성
+except Exception as auth_e:
+    st.error(f"❌ 구글 클라우드 계정 인증 실패: {auth_e}")
+    st.stop()
 
 
-# 구글 스프레딧 파일의 고유 ID를 추출하는 함수 (기존 구조 유지)
+# 구글 스프레딧 파일의 고유 ID를 추출하는 함수
 def get_spreadsheet_id(url):
     sheet_id_match = re.search(r'/d/([a-zA-Z0-9-_]+)', url)
     if sheet_id_match:
@@ -47,15 +57,11 @@ def get_spreadsheet_id(url):
     return url.split('/')[-1] if '/' in url else url
 
 
-# ✨ yfinance 주가 수집 및 구글 시트 "종가" 탭 업데이트 함수
-# ✨ yfinance 주가 수집 및 구글 시트 업데이트 함수 (B열 티커 읽기 -> C열 종가 기록)
+# ✨ FinanceDataReader 주가 수집 및 구글 시트 업데이트 함수
 def update_google_sheet_prices():
     try:
         sheet_id = get_spreadsheet_id(GOOGLE_SHEET_URL)
-        sh = gc.open_by_key(sheet_id)
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-        gc = gspread.authorize(credentials)
+        sh = gc.open_by_key(sheet_id)  # 전역 gc 안전하게 사용
 
         try:
             worksheet = sh.worksheet("종가")
@@ -77,27 +83,22 @@ def update_google_sheet_prices():
                 continue
 
             stock_name = row[0].strip()
-            ticker_code = row[1].strip()  # B열 값 읽기 (예: 433220 또는 NASDAQ:QQQM)
+            ticker_code = row[1].strip()
 
             if not ticker_code:
                 continue
 
             try:
-                # 💡 FinanceDataReader로 최근 가격 데이터프레임 가져오기
                 df = fdr.DataReader(ticker_code)
 
                 if not df.empty:
-                    # 'Close'(종가) 가져오기
-                    # (국내는 원화 정수형태, 미국 주식은 달러 가격 그대로 소수점 포함되어 들어옵니다)
                     current_price = df['Close'].iloc[-1]
 
-                    # 미국 주식일 경우 소수점 2자리까지만 기록하고, 한국 주식이면 정수로 변환하는 안전장치
                     if ":" in ticker_code or ticker_code.isalpha():
                         current_price = round(float(current_price), 2)
                     else:
                         current_price = int(current_price)
 
-                    # C열에 기록
                     cell_address = f"C{row_idx}"
                     worksheet.update_acell(cell_address, current_price)
 
@@ -116,12 +117,11 @@ def update_google_sheet_prices():
     except Exception as global_e:
         st.sidebar.error(f"🔥 구글 시트 연동 실패: {global_e}")
 
-        
+
 @st.cache_data(ttl=60)
 def load_sheet_by_gid(base_url, gid):
     try:
         sheet_id = get_spreadsheet_id(GOOGLE_SHEET_URL)
-        sh = gc.open_by_key(sheet_id)
         export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
         df = pd.read_csv(export_url)
         df.columns = df.columns.str.strip()
@@ -141,7 +141,6 @@ if st.sidebar.button("🔄 구글 시트 새로고침"):
     st.cache_data.clear()
     st.rerun()
 
-# ✨ 현재가 직접 구글 시트에 저장하는 버튼 트리거 (st.spinner 교정형)
 if st.sidebar.button("🚀 구글 시트에 현재가 저장"):
     with st.spinner("🚀 파이낸스 데이터를 가져오는 중입니다..."):
         update_google_sheet_prices()
@@ -229,14 +228,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 1. 데이터 가져오기 및 분류 처리 함수 정의
+# 3. 데이터 가져오기 및 분류 처리 함수 정의
 # -----------------------------------------------------------------------------
 df_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_매수일지)
 df_yearly_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_연도별수익)
 df_deposit_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_입금액)
 
 
-# 자산구분 정밀 분류 함수
 def categorize_kind(k):
     k_str = str(k).upper()
     if 'ETF' in k_str:
@@ -250,7 +248,6 @@ def categorize_kind(k):
     return '개별종목'
 
 
-# 입금액 데이터 전처리
 df_deposit = None
 if df_deposit_raw is not None:
     df_deposit = df_deposit_raw.copy()
@@ -263,7 +260,6 @@ if df_deposit_raw is not None:
         df_deposit['금액'] = pd.to_numeric(df_deposit['금액'], errors='coerce').fillna(0)
 
 
-# 탭/계좌별 총 입금액 계산 함수
 def get_total_deposit(tab_name):
     if df_deposit is None or df_deposit.empty:
         return 0
@@ -279,7 +275,6 @@ def get_total_deposit(tab_name):
     return filtered_df['금액'].sum()
 
 
-# 탭/계좌별 배당수익 계산 함수
 def get_dividend_profit(tab_name, full_df):
     if full_df is None or full_df.empty or '구분' not in full_df.columns or '총액' not in full_df.columns:
         return 0
@@ -310,7 +305,6 @@ if df_raw is not None:
         if df[col].dtype == 'object':
             df[col] = df[col].astype(str).str.strip()
 
-    # 숫자형 데이터 정밀 전처리
     numeric_cols = ['거래금액', '수량', '투자금', '수수료', '총액', '종가']
     for col in numeric_cols:
         if col in df.columns:
@@ -318,7 +312,6 @@ if df_raw is not None:
                 df[col] = df[col].str.replace(',', '').str.strip()
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    # 자산 현황용 데이터 가공 (매수 기준)
     df_buy = df[df['구분'] == '매수'].copy()
     latest_prices = df.sort_values(by='일자' if '일자' in df.columns else df.index).groupby('종목명')['종가'].last().to_dict()
     type_mapping = df.groupby('종목명')['종류'].last().to_dict()
@@ -339,13 +332,11 @@ if df_raw is not None:
     portfolio['총수익'] = portfolio['평가금액'] - portfolio['총매입가']
     portfolio['수익률'] = np.where(portfolio['총매입가'] > 0, (portfolio['총수익'] / portfolio['총매입가']) * 100, 0)
 
-    # 계좌 정렬 순서 정의
     raw_accounts = [acc for acc in portfolio['계좌'].unique() if acc not in ['nan', '', 'None']]
     active_accounts = [acc for acc in raw_accounts if acc != 'ISA']
     inactive_accounts = [acc for acc in raw_accounts if acc == 'ISA']
     final_account_order = active_accounts + inactive_accounts
 
-    # 탭 구성
     tab_titles = ["📈 SUMMARY"] + [f"💳 {acc}" for acc in final_account_order]
     tabs = st.tabs(tab_titles)
 
@@ -353,7 +344,6 @@ if df_raw is not None:
     active_portfolio = active_portfolio[active_portfolio['종류'] != '채권']
 
 
-    # 공통 컴포넌트 함수 정의
     def render_summary_and_weights():
         total_inv_all = active_portfolio['총매입가'].sum()
         total_eva_all = active_portfolio['평가금액'].sum()
@@ -419,7 +409,6 @@ if df_raw is not None:
             df_type_eva = active_portfolio.groupby('종류').agg({'평가금액': 'sum', '총매입가': 'sum'}).reset_index()
             df_type_eva = df_type_eva.sort_values(by='평가금액', ascending=False).reset_index(drop=True)
             df_type_eva['비중'] = (df_type_eva['평가금액'] / total_eva_all) * 100
-            df_type_eva['text'] = df_type_eva['평가금액'] - df_type_eva['총매입가']
             df_type_eva['손익'] = df_type_eva['평가금액'] - df_type_eva['총매입가']
             top_eva_pct = df_type_eva.loc[0, '비중'] if not df_type_eva.empty else 0
             st.progress(int(top_eva_pct) / 100 if top_eva_pct <= 100 else 1.0,
@@ -468,7 +457,7 @@ if df_raw is not None:
 
 
     # -------------------------------------------------------------------------
-    # 2. 📈 메인 포트폴리오 총괄표 (SUMMARY)
+    # SUMMARY 탭 출력
     # -------------------------------------------------------------------------
     with tabs[0]:
         if active_portfolio.empty:
@@ -484,7 +473,6 @@ if df_raw is not None:
 
             analysis_mode = st.radio("월별/연도별 기준 선택", ["월별 추이", "연도별 추이"], horizontal=True)
 
-            # 데이터 가공
             df_dividend = df[df['구분'].astype(str).str.contains('배당|이자', na=False)].copy()
             df_dividend['일자_정제'] = pd.to_datetime(df_dividend['일자'].astype(str).str.replace('.', '-', regex=False),
                                                   errors='coerce')
@@ -504,25 +492,16 @@ if df_raw is not None:
 
             fig = px.bar(
                 df_plot, x='표시', y='실수령금', color='자산구분',
-                title=title_text,
-                barmode='stack',
-                color_discrete_map={
-                    'ETF': '#3182F6',
-                    '이자': '#00D4B2',
-                    '개별종목': '#FF4B4B',
-                    'ELS': '#FF9F43',
-                    '채권': '#A55EEA'
-                }
+                title=title_text, barmode='stack',
+                color_discrete_map={'ETF': '#3182F6', '이자': '#00D4B2', '개별종목': '#FF4B4B', 'ELS': '#FF9F43',
+                                    '채권': '#A55EEA'}
             )
 
             fig.add_trace(
                 go.Scatter(
-                    x=df_total['표시'],
-                    y=df_total['실수령금'],
-                    mode='text',
+                    x=df_total['표시'], y=df_total['실수령금'], mode='text',
                     text=df_total['실수령금'].apply(lambda x: f"{x:,.0f}"),
-                    textposition='top center',
-                    textfont=dict(color='#8B95A1', size=12, family='Pretendard'),
+                    textposition='top center', textfont=dict(color='#8B95A1', size=12, family='Pretendard'),
                     showlegend=False
                 )
             )
@@ -539,9 +518,7 @@ if df_raw is not None:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # -----------------------------------------------------------------
-            # ✨ 원금대비수익률 추이 시각화 그래프
-            # -----------------------------------------------------------------
+            # 원금대비수익률 시각화 그래프
             df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_원금대비수익률)
 
             if df_profit_rate_raw is not None and not df_profit_rate_raw.empty:
@@ -573,86 +550,36 @@ if df_raw is not None:
                 df_pr['수익금_백만'] = df_pr['수익금'] / 1000000
 
                 fig_growth = go.Figure()
-
-                fig_growth.add_trace(go.Bar(
-                    x=df_pr['x_axis'],
-                    y=df_pr['누적입금액_백만'],
-                    name='누적입금액',
-                    marker_color='#5AC8FA',
-                    opacity=0.8,
-                    yaxis='y1',
-                    hovertemplate='%{y:,.1f}백만 원'
-                ))
-
-                fig_growth.add_trace(go.Bar(
-                    x=df_pr['x_axis'],
-                    y=df_pr['수익금_백만'],
-                    name='수익금',
-                    marker_color='#3182F6',
-                    opacity=0.9,
-                    yaxis='y1',
-                    hovertemplate='%{y:,.1f}백만 원'
-                ))
-
+                fig_growth.add_trace(
+                    go.Bar(x=df_pr['x_axis'], y=df_pr['누적입금액_백만'], name='누적입금액', marker_color='#5AC8FA', opacity=0.8,
+                           yaxis='y1', hovertemplate='%{y:,.1f}백만 원'))
+                fig_growth.add_trace(
+                    go.Bar(x=df_pr['x_axis'], y=df_pr['수익금_백만'], name='수익금', marker_color='#3182F6', opacity=0.9,
+                           yaxis='y1', hovertemplate='%{y:,.1f}백만 원'))
                 fig_growth.add_trace(go.Scatter(
-                    x=df_pr['x_axis'],
-                    y=df_pr['입금액 대비 수익률'],
-                    name='입금액 대비 수익률',
-                    mode='lines+markers+text',
-                    line=dict(color='#F04452', width=3),
-                    marker=dict(size=6, color='#F04452'),
+                    x=df_pr['x_axis'], y=df_pr['입금액 대비 수익률'], name='입금액 대비 수익률', mode='lines+markers+text',
+                    line=dict(color='#F04452', width=3), marker=dict(size=6, color='#F04452'),
                     text=df_pr['입금액 대비 수익률'].apply(lambda x: f"{x:.1f}%" if x != 0 else ""),
-                    textposition='top center',
-                    textfont=dict(color='#FFFFFF', size=10, family='Pretendard'),
-                    yaxis='y2',
+                    textposition='top center', textfont=dict(color='#FFFFFF', size=10, family='Pretendard'), yaxis='y2',
                     hovertemplate='%{y:.2f}%'
                 ))
 
                 fig_growth.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                     font=dict(color='#FFFFFF', family='Pretendard'),
-                    barmode='stack',
-                    hovermode='x unified',
-                    showlegend=True,
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1,
-                        font=dict(size=11)
-                    ),
-                    xaxis=dict(
-                        title='',
-                        gridcolor='#161B24',
-                        showgrid=False,
-                        tickangle=-45,
-                        type='category'
-                    ),
-                    yaxis=dict(
-                        title='금액 (백만 원)',
-                        gridcolor='#161B24',
-                        showgrid=True,
-                        side='left',
-                        tickformat=',.0f'
-                    ),
-                    yaxis2=dict(
-                        title='수익률 (%)',
-                        side='right',
-                        overlaying='y',
-                        showgrid=False,
-                        ticksuffix='%'
-                    ),
+                    barmode='stack', hovermode='x unified', showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=11)),
+                    xaxis=dict(title='', gridcolor='#161B24', showgrid=False, tickangle=-45, type='category'),
+                    yaxis=dict(title='금액 (백만 원)', gridcolor='#161B24', showgrid=True, side='left', tickformat=',.0f'),
+                    yaxis2=dict(title='수익률 (%)', side='right', overlaying='y', showgrid=False, ticksuffix='%'),
                     margin=dict(t=40, b=60, l=10, r=10)
                 )
-
                 st.plotly_chart(fig_growth, use_container_width=True)
             else:
                 st.info("원금대비수익률 시트 데이터를 불러오지 못했거나 데이터가 비어있습니다.")
 
     # -------------------------------------------------------------------------
-    # 3. 개별 계좌별 상세 내역 탭 리스트업 루프
+    # 4. 개별 계좌별 상세 내역 탭 리스트업 루프 (끊긴 코드 마무리 완성)
     # -------------------------------------------------------------------------
     for i, acc in enumerate(final_account_order):
         with tabs[i + 1]:
@@ -692,15 +619,8 @@ if df_raw is not None:
 
             st.markdown(f"""
             <div class="toss-summary-container" style="background-color: #171C26; margin-top: -10px; margin-bottom: 25px;">
-                <div class="toss-summary-item">
-                    <div class="toss-summary-label">입금액</div>
-                    <div class="toss-summary-val">{acc_deposit:,.0f}원</div>
-                </div>
-                <div class="toss-summary-item" style="border-left: 1px solid #1C222E; border-right: 1px solid #1C222E;">
-                    <div class="toss-summary-label">배당수익</div>
-                    <div class="toss-summary-val dividend-highlight">+{acc_dividend:,.0f}원</div>
-                    <div class="toss-summary-subval dividend-highlight">({acc_dividend_rate:.2f}%)</div>
-                </div>
+                <div class="toss-summary-item"><div class="toss-summary-label">입금액</div><div class="toss-summary-val">{acc_deposit:,.0f}원</div></div>
+                <div class="toss-summary-item" style="border-left: 1px solid #1C222E; border-right: 1px solid #1C222E;"><div class="toss-summary-label">배당수익</div><div class="toss-summary-val dividend-highlight">+{acc_dividend:,.0f}원</div><div class="toss-summary-subval dividend-highlight">({acc_dividend_rate:.2f}%)</div></div>
                 <div class="toss-summary-item">
                     <div class="toss-summary-label">총 손익</div>
                     <div class="toss-summary-val {"trend-up" if acc_net_profit >= 0 else "trend-down"}">{"+" if acc_net_profit >= 0 else ""}{acc_net_profit:,.0f}원</div>
@@ -709,21 +629,20 @@ if df_raw is not None:
             </div>
             """, unsafe_allow_html=True)
 
-            col_left, col_right = st.columns(2)
-
-            with col_left:
-                st.markdown("<h4 style='font-size: 16px; color:#CCD2DB; margin-top:5px;'>보유 종목</h4>",
+            # 끊겼던 계좌별 하단 종목 출력 파트 완성
+            if part_a.empty and part_b.empty:
+                st.info("이 계좌에 등록된 종목 내역이 없습니다.")
+            else:
+                st.markdown("<h4 style='font-size: 16px; color:#CCD2DB; margin-bottom:12px;'>보유 중인 자산</h4>",
                             unsafe_allow_html=True)
-                if part_a.empty: st.caption("보유 종목이 없습니다.")
                 for _, row in part_a.iterrows():
                     trend_class = "trend-up" if row['총수익'] >= 0 else "trend-down"
                     sign = "+" if row['총수익'] >= 0 else ""
                     qty_str = "계약 완료" if row['종류'] == 'ELS' and row['보유수량'] == 0 else f"{row['보유수량']:,}주"
-
                     st.markdown(f"""
                     <div class="toss-stock-row">
                         <div class="stock-left-box">
-                            <span class="stock-main-name">{row['종목명']}</span>
+                            <span class="stock-main-name">{row['종목명']} <span style='font-size:11px; color:#8B95A1; font-weight:normal;'>| {row['종류']}</span></span>
                             <span class="stock-sub-qty">{qty_str}</span>
                         </div>
                         <div class="stock-right-box">
@@ -732,20 +651,5 @@ if df_raw is not None:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-
-            with col_right:
-                st.markdown("<h4 style='font-size: 16px; color:#CCD2DB; margin-top:5px;'>매도 종목</h4>",
-                            unsafe_allow_html=True)
-                if part_b.empty: st.caption("매도한 종목이 없습니다.")
-                for _, row in part_b.iterrows():
-                    trend_class = "trend-up" if row['총수익'] >= 0 else "trend-down" if row['총수익'] < 0 else "trend-none"
-                    sign = "+" if row['총수익'] >= 0 else ""
-                    st.markdown(f"""
-                    <div class="toss-stock-row" style="opacity: 0.5;">
-                        <div class="stock-left-box"><span class="stock-main-name">{row['종목명']}</span><span class="stock-sub-qty">0주</span></div>
-                        <div class="stock-right-box">
-                            <span class="stock-main-price">-</span>
-                            <span class="stock-sub-qty {trend_class}">{sign}{row['총수익']:,.0f}원</span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+else:
+    st.error("❌ 구글 시트에서 '매수일지' 데이터를 불러오지 못했습니다. URL 및 권한을 점검해 주세요.")
