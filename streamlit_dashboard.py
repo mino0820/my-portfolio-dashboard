@@ -10,6 +10,7 @@ import yfinance as yf
 import time
 import time
 import gspread
+from google.oauth2.service_account import Credentials
 
 # Page configuration
 st.set_page_config(
@@ -51,10 +52,11 @@ def get_spreadsheet_id(url):
 # ✨ yfinance 주가 수집 및 구글 시트 업데이트 함수 (B열 티커 읽기 -> C열 종가 기록)
 def update_google_sheet_prices():
     try:
-        target_creds_path = r"C:\Users\min\Desktop\creds.json"
-        gc = gspread.service_account(filename=target_creds_path)
         sheet_id = get_spreadsheet_id(GOOGLE_SHEET_URL)
         sh = gc.open_by_key(sheet_id)
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        gc = gspread.authorize(credentials)
 
         try:
             worksheet = sh.worksheet("종가")
@@ -119,7 +121,8 @@ def update_google_sheet_prices():
 @st.cache_data(ttl=60)
 def load_sheet_by_gid(base_url, gid):
     try:
-        sheet_id = get_spreadsheet_id(base_url)
+        sheet_id = get_spreadsheet_id(GOOGLE_SHEET_URL)
+        sh = gc.open_by_key(sheet_id)
         export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
         df = pd.read_csv(export_url)
         df.columns = df.columns.str.strip()
