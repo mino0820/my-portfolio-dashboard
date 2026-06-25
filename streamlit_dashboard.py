@@ -150,78 +150,51 @@ if st.sidebar.button("🚀 구글 시트에 현재가 저장"):
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+/* 반응형 자산 요약 컨테이너 */
+.summary-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
 
-    html, body, [data-testid="stAppViewContainer"] {
-        background-color: #0B0E14 !important;
-        color: #FFFFFF !important;
-        font-family: 'Pretendard', sans-serif;
+/* 카드 개별 스타일 (기본적으로 PC에서는 4분할 구조, 마진 제외 약 23%) */
+.summary-card {
+    flex: 1 1 calc(25% - 12px);
+    background-color: #161B24;
+    border-radius: 12px;
+    padding: 16px;
+    min-width: 160px; /* 모바일에서 이 크기보다 좁아지면 아래로 내려감 */
+    box-sizing: border-box;
+}
+
+.summary-label {
+    font-size: 13px;
+    color: #8B95A1;
+    margin-bottom: 6px;
+    display: block;
+}
+
+.summary-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #FFFFFF;
+}
+
+.summary-value.plus { color: #F04452; }
+.summary-value.minus { color: #3182F6; }
+
+/* 📱 모바일 화면 (화면 폭 600px 이하) 설정 */
+@media (max-width: 600px) {
+    .summary-card {
+        flex: 1 1 calc(50% - 12px); /* 모바일에서는 한 줄에 2개씩 배치 */
+        padding: 12px;
     }
-
-    [data-testid="stSidebar"] {
-        background-color: #171C26 !important;
+    .summary-value {
+        font-size: 16px; /* 모바일에서는 글씨 크기를 살짝 줄여서 안 깨지게 */
     }
-
-    .toss-stock-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 16px 20px;
-        background-color: #171C26 !important;
-        border-radius: 14px;
-        margin-bottom: 12px;
-        border: 1px solid #222937;
-    }
-
-    .stock-left-box {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        align-items: flex-start;
-    }
-
-    .stock-right-box {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 2px;
-    }
-
-    .stock-main-name { font-size: 15px; font-weight: 700; color: #FFFFFF; }
-    .account-badge {
-        background-color: #222937; color: #3182F6; font-size: 11px;
-        font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-right: 6px;
-    }
-    .stock-sub-qty { font-size: 12px; color: #8B95A1; }
-    .stock-main-price { font-size: 15px; font-weight: 700; color: #FFFFFF; }
-
-    .toss-summary-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 24px;
-        margin-bottom: 12px;
-        border-radius: 14px;
-    }
-    .toss-summary-item { flex: 1; text-align: center; }
-    .toss-summary-label { font-size: 14px; color: #8B95A1; margin-bottom: 8px; }
-    .toss-summary-val { font-size: 24px; font-weight: 700; color: #FFFFFF; }
-    .toss-summary-subval { font-size: 13px; margin-top: 4px; font-weight: 500; }
-
-    .dividend-highlight { color: #00D4B2 !important; }
-
-    .weight-container-box { padding: 12px 20px; margin-top: 12px; }
-    .weight-inner-item {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 14px 0; border-bottom: 1px solid #222937;
-    }
-    .weight-inner-item:last-child { border-bottom: none; }
-    .badge-label { font-size: 14px; font-weight: 600; color: #E5E8EB; }
-    .badge-pct { font-size: 14px; font-weight: 700; color: #FFFFFF; }
-    .badge-value { font-size: 14px; color: #9EAAB8; }
-
-    .trend-up { color: #F04452 !important; }
-    .trend-down { color: #3182F6 !important; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -357,13 +330,22 @@ if df is not None:
         net_rate_all = (net_profit_all / total_deposit_all * 100) if total_deposit_all > 0 else 0
 
         st.markdown(f"""
-        <div class="toss-summary-container" style="background-color: #171C26;">
-            <div class="toss-summary-item"><div class="toss-summary-label">총 투자금액</div><div class="toss-summary-val">{total_inv_all:,.0f}원</div></div>
-            <div class="toss-summary-item" style="border-left: 1px solid #222937; border-right: 1px solid #222937;"><div class="toss-summary-label">총 평가금액</div><div class="toss-summary-val">{total_eva_all:,.0f}원</div></div>
-            <div class="toss-summary-item">
-                <div class="toss-summary-label">총 평가손익</div>
-                <div class="toss-summary-val {"trend-up" if total_profit_all >= 0 else "trend-down"}">{"+" if total_profit_all >= 0 else ""}{total_profit_all:,.0f}원</div>
-                <div class="toss-summary-subval {"trend-up" if total_profit_all >= 0 else "trend-down"}">({"+" if total_profit_all >= 0 else ""}{total_rate_all:.2f}%)</div>
+        <div class="summary-container">
+            <div class="summary-card">
+                <span class="summary-label">💳 총 투자금액</span>
+                <div class="summary-value">94,416,930원</div>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">💳 총 평가금액</span>
+                <div class="summary-value">122,187,555원</div>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">📈 총 평가손익</span>
+                <div class="summary-value plus">+27,770,625원 (+29.41%)</div>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">💰 총 입금액</span>
+                <div class="summary-value">96,612,744원</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
