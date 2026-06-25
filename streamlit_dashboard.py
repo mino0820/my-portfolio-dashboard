@@ -146,11 +146,11 @@ if st.sidebar.button("🚀 구글 시트에 현재가 저장"):
     st.rerun()
 
 # -----------------------------------------------------------------------------
-# ✨ [강력한 CSS 수립] 하얀 기본 배경을 강제로 다크 테마로 덮어쓰기
+# ✨ [강력한 CSS 수립] 오리지널 색상 동기화 및 다크 테마 고정
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-/* 🚨 기본 하얀 배경을 어두운 배경으로 강제 변경 (!important 필수) */
+/* 기본 하얀 배경을 어두운 배경으로 강제 변경 */
 .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
     background-color: #0F141C !important;
     color: #ffffff !important;
@@ -237,19 +237,26 @@ st.markdown("""
     font-size: 15px;
     font-weight: 600;
     color: #ffffff;
+    display: flex;
+    align-items: center;
 }
+
+/* 🔵 [수정 반영] 계좌명 배지 색상을 기존 회색에서 원본의 파란색/네이비 톤으로 복원 */
 .account-badge {
-    background-color: #2c3444;
-    color: #8b95a1;
+    background-color: #1a2c4e !important;
+    color: #4b96ff !important;
     font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    margin-right: 6px;
+    font-weight: 700;
+    padding: 3px 7px;
+    border-radius: 5px;
+    margin-right: 8px;
+    line-height: 1;
 }
+
 .stock-sub-qty {
     font-size: 12px;
     color: #8b95a1;
-    margin-top: 2px;
+    margin-top: 4px;
 }
 .stock-right-box {
     display: flex;
@@ -273,15 +280,15 @@ st.markdown("""
 /* 📱 모바일 화면 (768px 이하 디바이스) 해상도 최적화 */
 @media (max-width: 768px) {
     .summary-container.four-cols .summary-card {
-        flex: 1 1 calc(50% - 16px); /* 4개짜리는 모바일에서 2열로 자동 배치 */
+        flex: 1 1 calc(50% - 16px);
         padding: 18px;
     }
     .summary-container.two-cols .summary-card {
-        flex: 1 1 100%; /* 배당/총손익 2개짜리는 모바일에서 1줄에 1개씩 꽉 차게 변경 */
+        flex: 1 1 100%;
         padding: 18px;
     }
     .summary-value {
-        font-size: 19px; /* 모바일 가독성을 위해 자산 수치 크기 살짝 조정 */
+        font-size: 19px;
     }
 }
 </style>
@@ -418,7 +425,7 @@ if df is not None:
         net_profit_all = total_profit_all + dividend_profit_all
         net_rate_all = (net_profit_all / total_deposit_all * 100) if total_deposit_all > 0 else 0
 
-        # 🟢 [상단 요약 4열 카드] 오리지널 디자인 아이콘 매칭 및 반응형 배치
+        # 요약 4열 카드 구조
         trend_class = "trend-up" if total_profit_all >= 0 else "trend-down"
         sign = "+" if total_profit_all >= 0 else ""
 
@@ -444,7 +451,7 @@ if df is not None:
         </div>
         """, unsafe_allow_html=True)
 
-        # 🟢 [하단 요약 2열 카드] 이미지 서식 복원 및 =+ 오타 수정 완료
+        # 요약 2열 카드 구조
         net_trend_class = "trend-up" if net_profit_all >= 0 else "trend-down"
         net_sign = "+" if net_profit_all >= 0 else ""
 
@@ -521,7 +528,7 @@ if df is not None:
                     <div class="toss-stock-row">
                         <div class="stock-left-box">
                             <span class="stock-main-name"><span class="account-badge">{row['계좌']}</span>{row['종목명']}</span>
-                            <span class="stock-sub-qty" style="margin-left: 4px;">{qty_str}</span>
+                            <span class="stock-sub-qty">{qty_str}</span>
                         </div>
                         <div class="stock-right-box">
                             <span class="stock-main-price">{row['평가금액']:,.0f} 원</span>
@@ -591,9 +598,7 @@ if df is not None:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # =================================================================
-            # 📊 원금대비수익률 데이터
-            # =================================================================
+            # 원금대비수익률 그래프 시각화
             df_profit_rate_raw = load_sheet_by_gid(GOOGLE_SHEET_URL, GRID_원금대비수익률)
 
             if df_profit_rate_raw is not None and not df_profit_rate_raw.empty:
@@ -605,7 +610,6 @@ if df is not None:
 
                 df_pr = df_profit_rate_raw.copy()
 
-                # 공백 청소
                 for col in df_pr.columns:
                     if df_pr[col].dtype == 'object':
                         df_pr[col] = df_pr[col].astype(str).str.replace(r'\s+', '', regex=True).str.strip()
@@ -678,17 +682,11 @@ if df is not None:
             acc_net_profit = acc_profit + acc_dividend
             acc_net_rate = (acc_net_profit / acc_deposit * 100) if acc_deposit > 0 else 0
 
-            if acc == 'ISA':
-                st.markdown(
-                    "<p style='color: #9EAAB8 !important; font-size: 13px; margin-bottom: -5px;'>💡 이 계좌는 현재 미사용 중이며, 과거 거래 내역 요약입니다.</p>",
-                    unsafe_allow_html=True)
-
             acc_trend = "trend-up" if acc_profit >= 0 else "trend-down"
             acc_sign = "+" if acc_profit >= 0 else ""
             acc_net_trend = "trend-up" if acc_net_profit >= 0 else "trend-down"
             acc_net_sign = "+" if acc_net_profit >= 0 else ""
 
-            # 🟢 개별 계좌 상세 탭도 4열/2열 플렉스 분리로 변경하여 완벽 연동
             st.markdown(f"""
             <div class="summary-container four-cols">
                 <div class="summary-card">
@@ -723,7 +721,6 @@ if df is not None:
             </div>
             """, unsafe_allow_html=True)
 
-            # 📊 좌우 레이아웃 분할 (보유 종목 | 매도 종목)
             col_left, col_right = st.columns(2)
 
             with col_left:
@@ -738,7 +735,7 @@ if df is not None:
                         st.markdown(f"""
                         <div class="toss-stock-row">
                             <div class="stock-left-box">
-                                <span class="stock-main-name">{row['종목명']}</span>
+                                <span class="stock-main-name"><span class="account-badge">{row['계좌']}</span>{row['종목명']}</span>
                                 <span class="stock-sub-qty">{qty_str}</span>
                             </div>
                             <div class="stock-right-box">
@@ -761,7 +758,7 @@ if df is not None:
                         st.markdown(f"""
                         <div class="toss-stock-row" style="opacity: 0.55;">
                             <div class="stock-left-box">
-                                <span class="stock-main-name">{row['종목명']}</span>
+                                <span class="stock-main-name"><span class="account-badge">{row['계좌']}</span>{row['종목명']}</span>
                                 <span class="stock-sub-qty">0주</span>
                             </div>
                             <div class="stock-right-box">
